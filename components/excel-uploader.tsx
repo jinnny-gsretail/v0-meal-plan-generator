@@ -4,18 +4,14 @@ import { useState, useCallback } from 'react'
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useMealboxStore } from '@/lib/store'
-import { FFType, Product, DessertGroup, DrinkGroup, DayOfWeek } from '@/lib/types'
+import { FFType } from '@/lib/types'
 import * as XLSX from 'xlsx'
 
 interface ParsedProduct {
-  code?: string
   name: string
   cost: number
   category: 'ff' | 'drink' | 'dessert'
   ffType?: FFType
-  group?: DessertGroup | DrinkGroup
-  subCategory?: string
-  dayConditions?: DayOfWeek[]
 }
 
 interface UploadResult {
@@ -25,24 +21,12 @@ interface UploadResult {
 }
 
 const validFFTypes: FFType[] = ['김밥', '주먹밥', '샌드', '버거', '도시락']
-const validDessertGroups: DessertGroup[] = ['프레시', '탄수화물', '단백질', '당류']
-const validDrinkGroups: DrinkGroup[] = ['건강', '주스', '탄산', '주스/차']
-const validDays: DayOfWeek[] = ['월요일', '화요일', '수요일', '목요일', '금요일']
 
 export function ExcelUploader() {
   const { addProducts, clearProducts, products } = useMealboxStore()
   const [isDragging, setIsDragging] = useState(false)
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
-
-  const parseDayCondition = (value: string | number | undefined): DayOfWeek | null => {
-    if (!value) return null
-    const dayStr = String(value).trim()
-    if (validDays.includes(dayStr as DayOfWeek)) {
-      return dayStr as DayOfWeek
-    }
-    return null
-  }
 
   const parseExcelFile = async (file: File): Promise<UploadResult> => {
     return new Promise((resolve) => {
@@ -75,6 +59,7 @@ export function ExcelUploader() {
             let category = categoryMap[sheetName]
             
             if (!category) {
+              // Try to find category from first row
               const firstRow = jsonData[0] as string[]
               const categoryCell = firstRow.find(cell => 
                 typeof cell === 'string' && categoryMap[cell.toLowerCase()]
@@ -84,59 +69,19 @@ export function ExcelUploader() {
               }
             }
             
-            if (!category) return
-            
-            // Get header row to find column indices
-            const headerRow = jsonData[0] as string[]
-            const colIndices: { [key: string]: number } = {}
-            
-            headerRow.forEach((header, idx) => {
-              const h = String(header || '').trim().toLowerCase()
-              if (h.includes('상품코드') || h === '코드') colIndices['code'] = idx
-              if (h.includes('소분류') || h === '상품명' || h === '이름') colIndices['name'] = idx
-              if (h.includes('원가') || h === '가격') colIndices['cost'] = idx
-              if (h.includes('타입') || h === '유형') colIndices['ffType'] = idx
-              if (h.includes('그룹') || h === '분류') colIndices['group'] = idx
-              if (h.includes('중분류')) colIndices['subCategory'] = idx
-              if (h.includes('요일') && h.includes('1')) colIndices['day1'] = idx
-              if (h.includes('요일') && h.includes('2')) colIndices['day2'] = idx
-              if (h.includes('요일') && h.includes('3')) colIndices['day3'] = idx
-            })
-            
-            // Fallback to position-based parsing if headers not found
-            if (colIndices['name'] === undefined) {
-              if (category === 'ff') {
-                colIndices['name'] = 0
-                colIndices['cost'] = 1
-                colIndices['ffType'] = 2
-              } else if (category === 'drink') {
-                colIndices['group'] = 0
-                colIndices['subCategory'] = 1
-                colIndices['name'] = 2
-                colIndices['day1'] = 3
-                colIndices['day2'] = 4
-                colIndices['day3'] = 5
-              } else if (category === 'dessert') {
-                colIndices['group'] = 0
-                colIndices['subCategory'] = 1
-                colIndices['name'] = 2
-              }
-            }
+            if (!category) return // Skip if category not found
             
             // Parse rows (skip header row)
             for (let i = 1; i < jsonData.length; i++) {
               const row = jsonData[i] as (string | number)[]
               if (!row || row.length < 2) continue
               
-              const name = String(row[colIndices['name']] || '').trim()
-              let cost = 0
+              // For FF category: 상품명, 원가, 타입
+              // For others: 상품명, 원가
+              const name = String(row[0] || '').trim()
+              const cost = parseInt(String(row[1] || '0'))
               
-              // Cost might be in a different column or might need to be set default
-              if (colIndices['cost'] !== undefined) {
-                cost = parseInt(String(row[colIndices['cost']] || '0'))
-              }
-              
-              if (!name) continue
+              if (!name || isNaN(cost)) continue
               
               const product: ParsedProduct = {
                 name,
@@ -144,47 +89,11 @@ export function ExcelUploader() {
                 category
               }
               
-              // Parse code
-              if (colIndices['code'] !== undefined && row[colIndices['code']]) {
-                product.code = String(row[colIndices['code']]).trim()
-              }
-              
-              // Parse group
-              if (colIndices['group'] !== undefined && row[colIndices['group']]) {
-                const groupStr = String(row[colIndices['group']]).trim()
-                if (category === 'dessert' && validDessertGroups.includes(groupStr as DessertGroup)) {
-                  product.group = groupStr as DessertGroup
-                } else if (category === 'drink' && validDrinkGroups.includes(groupStr as DrinkGroup)) {
-                  product.group = groupStr as DrinkGroup
-                }
-              }
-              
-              // Parse subCategory
-              if (colIndices['subCategory'] !== undefined && row[colIndices['subCategory']]) {
-                product.subCategory = String(row[colIndices['subCategory']]).trim()
-              }
-              
-              // For FF category, check for type
-              if (category === 'ff' && colIndices['ffType'] !== undefined && row[colIndices['ffType']]) {
-                const ffTypeStr = String(row[colIndices['ffType']]).trim()
+              // For FF category, check for type in third column
+              if (category === 'ff' && row[2]) {
+                const ffTypeStr = String(row[2]).trim()
                 if (validFFTypes.includes(ffTypeStr as FFType)) {
                   product.ffType = ffTypeStr as FFType
-                }
-              }
-              
-              // For drink category, parse day conditions
-              if (category === 'drink') {
-                const dayConditions: DayOfWeek[] = []
-                const day1 = parseDayCondition(row[colIndices['day1']])
-                const day2 = parseDayCondition(row[colIndices['day2']])
-                const day3 = parseDayCondition(row[colIndices['day3']])
-                
-                if (day1) dayConditions.push(day1)
-                if (day2) dayConditions.push(day2)
-                if (day3) dayConditions.push(day3)
-                
-                if (dayConditions.length > 0) {
-                  product.dayConditions = dayConditions
                 }
               }
               
@@ -279,60 +188,43 @@ export function ExcelUploader() {
     
     // FF sheet
     const ffData = [
-      ['상품코드', '소분류명', '원가', '타입'],
-      ['FF001', '참치김밥', 1200, '김밥'],
-      ['FF002', '소고기김밥', 1500, '김밥'],
-      ['FF003', '스팸주먹밥', 800, '주먹밥'],
-      ['FF004', '참치마요주먹밥', 750, '주먹밥'],
-      ['FF005', '햄치즈샌드', 1100, '샌드'],
-      ['FF006', '에그샌드', 1000, '샌드'],
-      ['FF007', '치킨버거', 1800, '버거'],
-      ['FF008', '불고기버거', 1600, '버거'],
-      ['FF009', '불고기도시락', 2500, '도시락'],
-      ['FF010', '제육도시락', 2300, '도시락'],
+      ['상품명', '원가', '타입'],
+      ['참치김밥', 1200, '김밥'],
+      ['소고기김밥', 1500, '김밥'],
+      ['스팸주먹밥', 800, '주먹밥'],
+      ['참치마요주먹밥', 750, '주먹밥'],
+      ['햄치즈샌드', 1100, '샌드'],
+      ['에그샌드', 1000, '샌드'],
+      ['치킨버거', 1800, '버거'],
+      ['불고기버거', 1600, '버거'],
+      ['불고기도시락', 2500, '도시락'],
+      ['제육도시락', 2300, '도시락'],
     ]
     const ffSheet = XLSX.utils.aoa_to_sheet(ffData)
     XLSX.utils.book_append_sheet(wb, ffSheet, 'FF')
     
-    // 음료 sheet (with day conditions)
+    // 음료 sheet
     const drinkData = [
-      ['그룹', '중분류명', '소분류명', '원가', '요일 조건1', '요일 조건2', '요일 조건3'],
-      ['건강', '기능성음료', '두유', 500, '월요일', '목요일', ''],
-      ['주스', '냉장음료', '냉장주스', 600, '화요일', '목요일', '금요일'],
-      ['건강', '발효유', '드링크요구르트', 500, '월요일', '', ''],
-      ['탄산', '생수/탄산수', '탄산수', 400, '수요일', '', ''],
-      ['건강', '우유', '가공우유', 500, '월요일', '목요일', ''],
-      ['주스/차', '주스', '주스-중페트', 700, '화요일', '목요일', '금요일'],
-      ['주스/차', '주스', '주스-팩', 500, '화요일', '목요일', '금요일'],
-      ['주스/차', '커피/차음료', '차음료', 600, '금요일', '', ''],
-      ['탄산', '탄산음료', '탄산-중캔', 500, '수요일', '', ''],
-      ['탄산', '탄산음료', '탄산-소캔', 400, '수요일', '', ''],
-      ['탄산', '탄산음료', '탄산-소페트', 500, '수요일', '', ''],
+      ['상품명', '원가'],
+      ['콜라 500ml', 1500],
+      ['사이다 500ml', 1500],
+      ['오렌지주스 300ml', 1200],
+      ['녹차 500ml', 1000],
+      ['물 500ml', 500],
+      ['이온음료 500ml', 1200],
     ]
     const drinkSheet = XLSX.utils.aoa_to_sheet(drinkData)
     XLSX.utils.book_append_sheet(wb, drinkSheet, '음료')
     
-    // 디저트 sheet (with group)
+    // 디저트 sheet
     const dessertData = [
-      ['그룹', '중분류명', '소분류명', '원가'],
-      ['당류', '냉장간편식품', '냉장디저트', 500],
-      ['탄수화물', '빵류', '상온디저트빵', 400],
-      ['탄수화물', '빵류', '일반빵', 350],
-      ['탄수화물', '빵류', '냉장디저트빵', 450],
-      ['탄수화물', '스낵', '일반스낵', 300],
-      ['프레시', '씨리얼/유아식', '기능성씨리얼', 600],
-      ['프레시', '안주', '견과안주', 500],
-      ['프레시', '어묵/맛살', '어묵', 400],
-      ['단백질', '어묵/맛살', '맛살', 450],
-      ['단백질', '육가공', '소시지', 500],
-      ['단백질', '육가공', '계육가공', 550],
-      ['당류', '초콜릿', '초콜릿', 400],
-      ['단백질', '치즈/버터', '치즈', 500],
-      ['당류', '캔디/껌', '캔디', 250],
-      ['당류', '캔디/껌', '젤리', 300],
-      ['탄수화물', '쿠키/샌드', '파이/샌드', 350],
-      ['탄수화물', '쿠키/샌드', '쿠키', 300],
-      ['프레시', '발효유', '요거트', 600],
+      ['상품명', '원가'],
+      ['초코칩쿠키', 500],
+      ['요거트', 800],
+      ['과일컵', 1000],
+      ['젤리', 400],
+      ['초콜릿', 600],
+      ['견과류믹스', 900],
     ]
     const dessertSheet = XLSX.utils.aoa_to_sheet(dessertData)
     XLSX.utils.book_append_sheet(wb, dessertSheet, '디저트')
@@ -347,30 +239,7 @@ export function ExcelUploader() {
     return { ff, drink, dessert }
   }
 
-  const getGroupCounts = () => {
-    const desserts = products.filter(p => p.category === 'dessert')
-    const drinks = products.filter(p => p.category === 'drink')
-    
-    const dessertGroups: { [key: string]: number } = {}
-    const drinkGroups: { [key: string]: number } = {}
-    
-    desserts.forEach(p => {
-      if (p.group) {
-        dessertGroups[p.group] = (dessertGroups[p.group] || 0) + 1
-      }
-    })
-    
-    drinks.forEach(p => {
-      if (p.group) {
-        drinkGroups[p.group] = (drinkGroups[p.group] || 0) + 1
-      }
-    })
-    
-    return { dessertGroups, drinkGroups }
-  }
-
   const counts = getCategoryCounts()
-  const groupCounts = getGroupCounts()
 
   return (
     <div className="space-y-4">
@@ -449,29 +318,9 @@ export function ExcelUploader() {
               {uploadResult.message}
             </p>
             {uploadResult.success && (
-              <div className="mt-3 space-y-2">
-                <div className="flex gap-4 text-sm text-muted-foreground">
-                  <span>FF: {counts.ff}개</span>
-                  <span>음료: {counts.drink}개</span>
-                  <span>디저트: {counts.dessert}개</span>
-                </div>
-                {Object.keys(groupCounts.dessertGroups).length > 0 && (
-                  <div className="text-sm text-muted-foreground">
-                    <span className="text-foreground font-medium">디저트 그룹:</span>{' '}
-                    {Object.entries(groupCounts.dessertGroups).map(([group, count]) => (
-                      <span key={group} className="mr-3">{group} {count}개</span>
-                    ))}
-                  </div>
-                )}
-                {Object.keys(groupCounts.drinkGroups).length > 0 && (
-                  <div className="text-sm text-muted-foreground">
-                    <span className="text-foreground font-medium">음료 그룹:</span>{' '}
-                    {Object.entries(groupCounts.drinkGroups).map(([group, count]) => (
-                      <span key={group} className="mr-3">{group} {count}개</span>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <p className="text-sm text-muted-foreground mt-1">
+                FF: {counts.ff}개, 음료: {counts.drink}개, 디저트: {counts.dessert}개
+              </p>
             )}
           </div>
         </div>
@@ -481,9 +330,8 @@ export function ExcelUploader() {
         <h4 className="font-medium text-foreground mb-2">엑셀 파일 형식 안내</h4>
         <ul className="text-sm text-muted-foreground space-y-1">
           <li>- 시트 이름: <span className="text-primary font-medium">FF</span>, <span className="text-primary font-medium">음료</span>, <span className="text-primary font-medium">디저트</span></li>
-          <li>- FF 시트: 상품코드, 소분류명, 원가, 타입(김밥/주먹밥/샌드/버거/도시락)</li>
-          <li>- 음료 시트: 그룹, 중분류명, 소분류명, 원가, 요일 조건1, 요일 조건2, 요일 조건3</li>
-          <li>- 디저트 시트: 그룹(프레시/탄수화물/단백질/당류), 중분류명, 소분류명, 원가</li>
+          <li>- FF 시트: 상품명, 원가, 타입(김밥/주먹밥/샌드/버거/도시락) 순서</li>
+          <li>- 음료/디저트 시트: 상품명, 원가 순서</li>
           <li>- 첫 번째 행은 헤더로 인식됩니다</li>
         </ul>
       </div>
