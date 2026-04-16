@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Header } from '@/components/header'
 import { ProductManager } from '@/components/product-manager'
+import { ExcelUploader } from '@/components/excel-uploader'
 import { CostSettings } from '@/components/cost-settings'
 import { MealCalendar } from '@/components/meal-calendar'
 import { Package, Settings, Calendar } from 'lucide-react'
@@ -33,10 +34,19 @@ export default function Home() {
           </TabsList>
           
           <TabsContent value="products" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <ProductManager category="ff" title="FF (김밥/삼각김밥/도시락/햄버거)" />
-              <ProductManager category="drink" title="음료" />
-              <ProductManager category="dessert" title="디저트" />
+            {/* 엑셀 업로더 */}
+            <div className="rounded-lg border border-border bg-card p-6">
+              <ExcelUploader />
+            </div>
+
+            {/* 수동 상품 관리 */}
+            <div>
+              <h3 className="text-lg font-semibold text-foreground mb-4">또는 수동으로 상품 관리</h3>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <ProductManager category="ff" title="FF (김밥/삼각김밥/도시락/햄버거)" />
+                <ProductManager category="drink" title="음료" />
+                <ProductManager category="dessert" title="디저트" />
+              </div>
             </div>
             
             <div className="rounded-lg border border-border bg-card p-4">
@@ -44,7 +54,7 @@ export default function Home() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted-foreground">
                 <div className="p-3 bg-secondary/30 rounded-lg">
                   <div className="font-medium text-foreground mb-1">1단계: 상품 등록</div>
-                  <p>각 카테고리에 이번 달 사용할 상품과 원가를 등록하세요.</p>
+                  <p>엑셀 파일을 드래그하거나 수동으로 상품을 등록하세요.</p>
                 </div>
                 <div className="p-3 bg-secondary/30 rounded-lg">
                   <div className="font-medium text-foreground mb-1">2단계: 원가 설정</div>
