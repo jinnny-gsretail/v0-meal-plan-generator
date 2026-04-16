@@ -1,4 +1,4 @@
-export type FFType = '김밥' | '삼각김밥' | '도시락' | '햄버거'
+export type FFType = '김밥' | '주먹밥' | '샌드' | '버거' | '도시락'
 
 export interface Product {
   id: string

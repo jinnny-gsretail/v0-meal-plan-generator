@@ -88,7 +88,7 @@ export function ExcelUploader() {
               // For FF category, check for type in third column
               if (category === 'ff' && row[2]) {
                 const ffTypeStr = String(row[2]).trim()
-                const validFFTypes: FFType[] = ['김밥', '삼각김밥', '도시락', '햄버거']
+                const validFFTypes: FFType[] = ['김밥', '주먹밥', '샌드', '버거', '도시락']
                 if (validFFTypes.includes(ffTypeStr as FFType)) {
                   product.ffType = ffTypeStr as FFType
                 }
@@ -189,11 +189,14 @@ export function ExcelUploader() {
       ['상품명', '원가', '타입'],
       ['참치김밥', 1200, '김밥'],
       ['소고기김밥', 1500, '김밥'],
-      ['스팸삼각김밥', 800, '삼각김밥'],
-      ['참치마요삼각김밥', 750, '삼각김밥'],
+      ['스팸주먹밥', 800, '주먹밥'],
+      ['참치마요주먹밥', 750, '주먹밥'],
+      ['햄치즈샌드', 1100, '샌드'],
+      ['에그샌드', 1000, '샌드'],
+      ['치킨버거', 1800, '버거'],
+      ['불고기버거', 1600, '버거'],
       ['불고기도시락', 2500, '도시락'],
       ['제육도시락', 2300, '도시락'],
-      ['치킨버거', 1800, '햄버거'],
     ]
     const ffSheet = XLSX.utils.aoa_to_sheet(ffData)
     XLSX.utils.book_append_sheet(wb, ffSheet, 'FF')
@@ -323,7 +326,7 @@ export function ExcelUploader() {
         <h4 className="font-medium text-foreground mb-2">엑셀 파일 형식 안내</h4>
         <ul className="text-sm text-muted-foreground space-y-1">
           <li>- 시트 이름: <span className="text-ff">FF</span>, <span className="text-drink">음료</span>, <span className="text-dessert">디저트</span></li>
-          <li>- FF 시트: 상품명, 원가, 타입(김밥/삼각김밥/도시락/햄버거) 순서</li>
+          <li>- FF 시트: 상품명, 원가, 타입(김밥/주먹밥/샌드/버거/도시락) 순서</li>
           <li>- 음료/디저트 시트: 상품명, 원가 순서</li>
           <li>- 첫 번째 행은 헤더로 인식됩니다</li>
         </ul>

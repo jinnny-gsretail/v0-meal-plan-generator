@@ -43,7 +43,7 @@ export default function Home() {
             <div>
               <h3 className="text-lg font-semibold text-foreground mb-4">또는 수동으로 상품 관리</h3>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <ProductManager category="ff" title="FF (김밥/삼각김밥/도시락/햄버거)" />
+                <ProductManager category="ff" title="FF (김밥/주먹밥/샌드/버거/도시락)" />
                 <ProductManager category="drink" title="음료" />
                 <ProductManager category="dessert" title="디저트" />
               </div>
@@ -77,15 +77,15 @@ export default function Home() {
                 <div className="space-y-3 text-sm">
                   <div className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg">
                     <span className="font-mono text-primary font-medium">3,500원</span>
-                    <span className="text-muted-foreground">FF(김밥/삼각김밥/햄버거) + 음료</span>
+                    <span className="text-muted-foreground">FF(김밥/주먹밥/샌드/버거) + 음료</span>
                   </div>
                   <div className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg">
                     <span className="font-mono text-primary font-medium">4,500원</span>
-                    <span className="text-muted-foreground">FF(김밥/삼각김밥/햄버거) + 음료 + 디저트 1개</span>
+                    <span className="text-muted-foreground">FF(김밥/주먹밥/샌드/버거) + 음료 + 디저트 1개</span>
                   </div>
                   <div className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg">
                     <span className="font-mono text-primary font-medium">5,500원</span>
-                    <span className="text-muted-foreground">FF(김밥/삼각김밥/햄버거) + 음료 + 디저트 2개</span>
+                    <span className="text-muted-foreground">FF(김밥/주먹밥/샌드/버거) + 음료 + 디저트 2개</span>
                   </div>
                   <div className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg">
                     <span className="font-mono text-primary font-medium">6,500원</span>

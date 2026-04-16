@@ -113,9 +113,10 @@ export function ProductManager({ category, title }: ProductManagerProps) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="김밥">김밥</SelectItem>
-                  <SelectItem value="삼각김밥">삼각김밥</SelectItem>
+                  <SelectItem value="주먹밥">주먹밥</SelectItem>
+                  <SelectItem value="샌드">샌드</SelectItem>
+                  <SelectItem value="버거">버거</SelectItem>
                   <SelectItem value="도시락">도시락</SelectItem>
-                  <SelectItem value="햄버거">햄버거</SelectItem>
                 </SelectContent>
               </Select>
             )}
@@ -178,9 +179,10 @@ function ProductRow({ product, isEditing, onEdit, onCancel, onSave, onDelete, ca
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="김밥">김밥</SelectItem>
-              <SelectItem value="삼각김밥">삼각김밥</SelectItem>
+              <SelectItem value="주먹밥">주먹밥</SelectItem>
+              <SelectItem value="샌드">샌드</SelectItem>
+              <SelectItem value="버거">버거</SelectItem>
               <SelectItem value="도시락">도시락</SelectItem>
-              <SelectItem value="햄버거">햄버거</SelectItem>
             </SelectContent>
           </Select>
         )}
