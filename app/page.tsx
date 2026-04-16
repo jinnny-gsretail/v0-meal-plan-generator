@@ -93,6 +93,48 @@ export default function Home() {
                   </div>
                 </div>
               </div>
+              
+              <div className="mt-4 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-4">
+                <h3 className="font-semibold text-yellow-500 mb-3">주먹밥 특수 규칙</h3>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p>주먹밥이 FF로 선택된 경우 디저트 구성이 달라집니다:</p>
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li><span className="text-primary">3,500원</span>: 주먹밥 + 음료 + 디저트 1개</li>
+                    <li><span className="text-primary">4,500원</span>: 주먹밥 + 음료 + 디저트 2개</li>
+                    <li><span className="text-primary">5,500원</span>: 주먹밥 사용 불가</li>
+                  </ul>
+                </div>
+              </div>
+              
+              <div className="mt-4 rounded-lg border border-border bg-card p-4">
+                <h3 className="font-semibold text-foreground mb-3">요일별 배치 규칙</h3>
+                <div className="space-y-3 text-sm text-muted-foreground">
+                  <div>
+                    <span className="text-primary font-medium">음료:</span> 각 상품별 요일 조건 1~3 중 랜덤 배치
+                  </div>
+                  <div>
+                    <span className="text-primary font-medium">디저트:</span> 요일별 고정 그룹(조건1)에서 1개 + 추가 시 조건2 그룹에서 랜덤
+                  </div>
+                  <div className="mt-3 p-3 bg-secondary/30 rounded-lg">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-foreground">
+                          <th className="text-left py-1">요일</th>
+                          <th className="text-left py-1">그룹 조건1 (고정)</th>
+                          <th className="text-left py-1">그룹 조건2 (추가)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr><td className="py-1">월요일</td><td>프레시</td><td>프레시/탄수화물</td></tr>
+                        <tr><td className="py-1">화요일</td><td>탄수화물</td><td>프레시/탄수화물</td></tr>
+                        <tr><td className="py-1">수요일</td><td>단백질</td><td>탄수화물/당류</td></tr>
+                        <tr><td className="py-1">목요일</td><td>당류</td><td>탄수화물/단백질</td></tr>
+                        <tr><td className="py-1">금요일</td><td>탄수화물</td><td>당류/단백질</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
             </div>
           </TabsContent>
           

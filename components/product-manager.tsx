@@ -5,7 +5,7 @@ import { Plus, Trash2, Edit2, Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useMealboxStore } from '@/lib/store'
-import { Product, FFType } from '@/lib/types'
+import { Product, FFType, DessertGroup, DrinkGroup, DayOfWeek } from '@/lib/types'
 import {
   Select,
   SelectContent,
@@ -19,6 +19,10 @@ interface ProductManagerProps {
   title: string
 }
 
+const validDessertGroups: DessertGroup[] = ['프레시', '탄수화물', '단백질', '당류']
+const validDrinkGroups: DrinkGroup[] = ['건강', '주스', '탄산', '주스/차']
+const validDays: DayOfWeek[] = ['월요일', '화요일', '수요일', '목요일', '금요일']
+
 export function ProductManager({ category, title }: ProductManagerProps) {
   const { products, addProduct, updateProduct, deleteProduct } = useMealboxStore()
   const categoryProducts = products.filter(p => p.category === category)
@@ -28,6 +32,7 @@ export function ProductManager({ category, title }: ProductManagerProps) {
   const [newName, setNewName] = useState('')
   const [newCost, setNewCost] = useState('')
   const [newFfType, setNewFfType] = useState<FFType>('김밥')
+  const [newGroup, setNewGroup] = useState<string>('')
   
   const handleAdd = () => {
     if (!newName || !newCost) return
@@ -35,19 +40,22 @@ export function ProductManager({ category, title }: ProductManagerProps) {
       name: newName,
       cost: parseInt(newCost),
       category,
-      ...(category === 'ff' ? { ffType: newFfType } : {})
+      ...(category === 'ff' ? { ffType: newFfType } : {}),
+      ...(newGroup ? { group: newGroup as DessertGroup | DrinkGroup } : {})
     })
     setNewName('')
     setNewCost('')
     setNewFfType('김밥')
+    setNewGroup('')
     setIsAdding(false)
   }
   
-  const handleUpdate = (id: string, name: string, cost: string, ffType?: FFType) => {
+  const handleUpdate = (id: string, name: string, cost: string, ffType?: FFType, group?: string) => {
     updateProduct(id, { 
       name, 
       cost: parseInt(cost),
-      ...(category === 'ff' ? { ffType } : {})
+      ...(category === 'ff' ? { ffType } : {}),
+      ...(group ? { group: group as DessertGroup | DrinkGroup } : {})
     })
     setEditingId(null)
   }
@@ -66,6 +74,12 @@ export function ProductManager({ category, title }: ProductManagerProps) {
       case 'drink': return 'bg-drink/20 text-drink'
       case 'dessert': return 'bg-dessert/20 text-dessert'
     }
+  }
+  
+  const getGroupOptions = () => {
+    if (category === 'dessert') return validDessertGroups
+    if (category === 'drink') return validDrinkGroups
+    return []
   }
 
   return (
@@ -88,16 +102,17 @@ export function ProductManager({ category, title }: ProductManagerProps) {
             onSave={handleUpdate}
             onDelete={() => deleteProduct(product.id)}
             category={category}
+            groupOptions={getGroupOptions()}
           />
         ))}
         
         {isAdding ? (
-          <div className="flex items-center gap-2 p-2 bg-secondary/50 rounded-md">
+          <div className="flex flex-wrap items-center gap-2 p-2 bg-secondary/50 rounded-md">
             <Input
               placeholder="상품명"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              className="h-8 flex-1 bg-background"
+              className="h-8 flex-1 min-w-[100px] bg-background"
             />
             <Input
               placeholder="원가"
@@ -117,6 +132,18 @@ export function ProductManager({ category, title }: ProductManagerProps) {
                   <SelectItem value="샌드">샌드</SelectItem>
                   <SelectItem value="버거">버거</SelectItem>
                   <SelectItem value="도시락">도시락</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            {(category === 'drink' || category === 'dessert') && (
+              <Select value={newGroup} onValueChange={setNewGroup}>
+                <SelectTrigger className="h-8 w-24 bg-background">
+                  <SelectValue placeholder="그룹" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getGroupOptions().map(group => (
+                    <SelectItem key={group} value={group}>{group}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             )}
@@ -148,23 +175,39 @@ interface ProductRowProps {
   isEditing: boolean
   onEdit: () => void
   onCancel: () => void
-  onSave: (id: string, name: string, cost: string, ffType?: FFType) => void
+  onSave: (id: string, name: string, cost: string, ffType?: FFType, group?: string) => void
   onDelete: () => void
   category: 'ff' | 'drink' | 'dessert'
+  groupOptions: string[]
 }
 
-function ProductRow({ product, isEditing, onEdit, onCancel, onSave, onDelete, category }: ProductRowProps) {
+function ProductRow({ product, isEditing, onEdit, onCancel, onSave, onDelete, category, groupOptions }: ProductRowProps) {
   const [name, setName] = useState(product.name)
   const [cost, setCost] = useState(product.cost.toString())
   const [ffType, setFfType] = useState<FFType>(product.ffType || '김밥')
+  const [group, setGroup] = useState<string>(product.group || '')
+  
+  const getGroupColor = (g: string) => {
+    switch (g) {
+      case '프레시': return 'bg-green-500/20 text-green-400'
+      case '탄수화물': return 'bg-yellow-500/20 text-yellow-400'
+      case '단백질': return 'bg-red-500/20 text-red-400'
+      case '당류': return 'bg-pink-500/20 text-pink-400'
+      case '건강': return 'bg-emerald-500/20 text-emerald-400'
+      case '주스': return 'bg-orange-500/20 text-orange-400'
+      case '탄산': return 'bg-blue-500/20 text-blue-400'
+      case '주스/차': return 'bg-amber-500/20 text-amber-400'
+      default: return 'bg-muted text-muted-foreground'
+    }
+  }
   
   if (isEditing) {
     return (
-      <div className="flex items-center gap-2 p-2 bg-secondary/50 rounded-md">
+      <div className="flex flex-wrap items-center gap-2 p-2 bg-secondary/50 rounded-md">
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="h-8 flex-1 bg-background"
+          className="h-8 flex-1 min-w-[100px] bg-background"
         />
         <Input
           type="number"
@@ -186,7 +229,19 @@ function ProductRow({ product, isEditing, onEdit, onCancel, onSave, onDelete, ca
             </SelectContent>
           </Select>
         )}
-        <Button size="sm" variant="ghost" onClick={() => onSave(product.id, name, cost, ffType)}>
+        {(category === 'drink' || category === 'dessert') && (
+          <Select value={group} onValueChange={setGroup}>
+            <SelectTrigger className="h-8 w-24 bg-background">
+              <SelectValue placeholder="그룹" />
+            </SelectTrigger>
+            <SelectContent>
+              {groupOptions.map(g => (
+                <SelectItem key={g} value={g}>{g}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <Button size="sm" variant="ghost" onClick={() => onSave(product.id, name, cost, ffType, group)}>
           <Check className="w-4 h-4" />
         </Button>
         <Button size="sm" variant="ghost" onClick={onCancel}>
@@ -198,11 +253,21 @@ function ProductRow({ product, isEditing, onEdit, onCancel, onSave, onDelete, ca
   
   return (
     <div className="flex items-center justify-between p-2 bg-secondary/30 rounded-md group hover:bg-secondary/50 transition-colors">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <span className="text-sm text-foreground">{product.name}</span>
         {product.ffType && (
           <span className="text-xs px-1.5 py-0.5 bg-muted rounded text-muted-foreground">
             {product.ffType}
+          </span>
+        )}
+        {product.group && (
+          <span className={`text-xs px-1.5 py-0.5 rounded ${getGroupColor(product.group)}`}>
+            {product.group}
+          </span>
+        )}
+        {product.dayConditions && product.dayConditions.length > 0 && (
+          <span className="text-xs px-1.5 py-0.5 bg-primary/20 text-primary rounded">
+            {product.dayConditions.join('/')}
           </span>
         )}
       </div>
