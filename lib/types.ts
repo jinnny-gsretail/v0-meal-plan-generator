@@ -18,14 +18,16 @@ export const MEAL_PLAN_PRICES: { label: MealPlanPrice; value: number }[] = [
   { label: '5.5', value: 5500 },
 ]
 
-// 모든 12개 식단명 생성
+// 모든 11개 식단명 생성 (삼각5.5 제외 - 주먹밥은 5500원대 사용 불가)
 export const ALL_MEAL_PLANS: { name: MealPlanName; ffType: FFType; price: number }[] = 
   MEAL_PLAN_FF_TYPES.flatMap(ff => 
-    MEAL_PLAN_PRICES.map(price => ({
-      name: `${ff.type}${price.label}` as MealPlanName,
-      ffType: ff.ffType,
-      price: price.value
-    }))
+    MEAL_PLAN_PRICES
+      .filter(price => !(ff.type === '삼각' && price.label === '5.5')) // 삼각5.5 제외
+      .map(price => ({
+        name: `${ff.type}${price.label}` as MealPlanName,
+        ffType: ff.ffType,
+        price: price.value
+      }))
   )
 
 export interface Product {
