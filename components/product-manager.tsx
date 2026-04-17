@@ -205,6 +205,11 @@ function ProductRow({ product, isEditing, onEdit, onCancel, onSave, onDelete, sh
             {product.ffType}
           </span>
         )}
+        {product.group && (
+          <span className="text-xs px-1.5 py-0.5 bg-muted rounded text-muted-foreground">
+            {product.group}
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-2">
         <span className="text-sm text-muted-foreground">
