@@ -134,14 +134,14 @@ export function MealCalendar() {
           return (
             <div
               key={idx}
-              className={`min-h-28 p-2 border-r border-b border-border last:border-r-0 
+              className={`min-h-36 p-1.5 border-r border-b border-border last:border-r-0 
                 ${!day ? 'bg-secondary/20' : 'hover:bg-secondary/30 cursor-pointer'}
                 ${isWeekend ? 'bg-secondary/10' : ''}`}
               onClick={() => day && setSelectedDate(dateStr)}
             >
               {day && (
                 <>
-                  <div className={`text-sm font-medium mb-1 ${
+                  <div className={`text-xs font-medium mb-1 ${
                     idx % 7 === 0 ? 'text-destructive' : idx % 7 === 6 ? 'text-primary' : 'text-foreground'
                   }`}>
                     {day}
@@ -150,23 +150,29 @@ export function MealCalendar() {
                     <div className="space-y-0.5">
                       {/* FF */}
                       {composition.ff && (
-                        <div className="text-xs px-1 py-0.5 rounded bg-ff/20 text-ff truncate">
+                        <div className="text-[10px] leading-tight px-1 py-0.5 rounded bg-ff/20 text-ff truncate">
                           {composition.ff.name}
                         </div>
                       )}
                       {/* 음료 */}
                       {composition.drink && (
-                        <div className="text-xs px-1 py-0.5 rounded bg-primary/20 text-primary truncate">
+                        <div className="text-[10px] leading-tight px-1 py-0.5 rounded bg-primary/20 text-primary truncate">
                           {composition.drink.name}
                         </div>
                       )}
+                      {/* 디저트들 */}
+                      {composition.desserts.map((dessert, i) => (
+                        <div key={i} className="text-[10px] leading-tight px-1 py-0.5 rounded bg-dessert/20 text-dessert truncate">
+                          {dessert.name}
+                        </div>
+                      ))}
                       {/* 원가 */}
-                      <div className={`text-xs px-1 py-0.5 rounded flex items-center gap-1 ${
+                      <div className={`text-[10px] leading-tight px-1 py-0.5 rounded flex items-center gap-0.5 ${
                         isOverBudget 
                           ? 'bg-destructive/20 text-destructive' 
                           : 'bg-muted text-muted-foreground'
                       }`}>
-                        {isOverBudget && <AlertCircle className="w-3 h-3 shrink-0" />}
+                        {isOverBudget && <AlertCircle className="w-2.5 h-2.5 shrink-0" />}
                         {composition.totalCost.toLocaleString()}원
                       </div>
                     </div>
