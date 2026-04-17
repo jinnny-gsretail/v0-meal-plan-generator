@@ -156,7 +156,7 @@ export function ExcelUploader() {
     }
 
     setIsProcessing(false)
-  }, [addProducts, clearProducts])
+  }, [setProducts])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
