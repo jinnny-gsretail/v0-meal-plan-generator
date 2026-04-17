@@ -11,7 +11,8 @@ interface ParsedProduct {
   name: string
   cost: number
   category: 'ff' | 'drink' | 'dessert'
-  ffType?: FFType
+  ffType?: FFType // FF의 중분류
+  group?: string // 음료/디저트의 그룹
 }
 
 interface UploadResult {
@@ -74,12 +75,13 @@ export function ExcelUploader() {
             // Parse rows (skip header row)
             for (let i = 1; i < jsonData.length; i++) {
               const row = jsonData[i] as (string | number)[]
-              if (!row || row.length < 2) continue
+              if (!row || row.length < 3) continue
               
-              // For FF category: 상품명, 원가, 타입
-              // For others: 상품명, 원가
-              const name = String(row[0] || '').trim()
-              const cost = parseInt(String(row[1] || '0'))
+              // FF: 중분류, 상품명, 원가
+              // 음료/디저트: 그룹, 상품명, 원가
+              const firstCol = String(row[0] || '').trim()
+              const name = String(row[1] || '').trim()
+              const cost = parseInt(String(row[2] || '0'))
               
               if (!name || isNaN(cost)) continue
               
@@ -89,12 +91,14 @@ export function ExcelUploader() {
                 category
               }
               
-              // For FF category, check for type in third column
-              if (category === 'ff' && row[2]) {
-                const ffTypeStr = String(row[2]).trim()
-                if (validFFTypes.includes(ffTypeStr as FFType)) {
-                  product.ffType = ffTypeStr as FFType
+              if (category === 'ff') {
+                // FF: 첫번째 컬럼이 중분류(타입)
+                if (validFFTypes.includes(firstCol as FFType)) {
+                  product.ffType = firstCol as FFType
                 }
+              } else {
+                // 음료/디저트: 첫번째 컬럼이 그룹
+                product.group = firstCol
               }
               
               parsedProducts.push(product)
@@ -186,45 +190,43 @@ export function ExcelUploader() {
   const downloadTemplate = () => {
     const wb = XLSX.utils.book_new()
     
-    // FF sheet
+    // FF sheet: 중분류, 상품명, 원가
     const ffData = [
-      ['상품명', '원가', '타입'],
-      ['참치김밥', 1200, '김밥'],
-      ['소고기김밥', 1500, '김밥'],
-      ['스팸주먹밥', 800, '주먹밥'],
-      ['참치마요주먹밥', 750, '주먹밥'],
-      ['햄치즈샌드', 1100, '샌드'],
-      ['에그샌드', 1000, '샌드'],
-      ['치킨버거', 1800, '버거'],
-      ['불고기버거', 1600, '버거'],
-      ['불고기도시락', 2500, '도시락'],
-      ['제육도시락', 2300, '도시락'],
+      ['중분류', '상품명', '원가'],
+      ['주먹밥', '깐부)직화불닭발주먹밥', 657],
+      ['주먹밥', '삼각)갈비양념불고기', 457],
+      ['주먹밥', '삼각)더바삭한김전주비빔', 413],
+      ['김밥', '참치김밥', 1200],
+      ['김밥', '소고기김밥', 1500],
+      ['샌드', '햄치즈샌드', 1100],
+      ['샌드', '에그샌드', 1000],
+      ['버거', '치킨버거', 1800],
+      ['버거', '불고기버거', 1600],
+      ['도시락', '불고기도시락', 2500],
+      ['도시락', '제육도시락', 2300],
     ]
     const ffSheet = XLSX.utils.aoa_to_sheet(ffData)
     XLSX.utils.book_append_sheet(wb, ffSheet, 'FF')
     
-    // 음료 sheet
+    // 음료 sheet: 그룹, 상품명, 원가
     const drinkData = [
-      ['상품명', '원가'],
-      ['콜라 500ml', 1500],
-      ['사이다 500ml', 1500],
-      ['오렌지주스 300ml', 1200],
-      ['녹차 500ml', 1000],
-      ['물 500ml', 500],
-      ['이온음료 500ml', 1200],
+      ['그룹', '상품명', '원가'],
+      ['주스', '남양)과수원사과팩190ML', 268],
+      ['탄산', '동아)나랑드사이다제로345ML', 295],
+      ['주스', '요아정드링킹요거트리치500ML', 335],
+      ['주스', '유어스)덴마크드링킹레몬500ML', 335],
+      ['탄산', '일화)천연사이다350ML', 346],
     ]
     const drinkSheet = XLSX.utils.aoa_to_sheet(drinkData)
     XLSX.utils.book_append_sheet(wb, drinkSheet, '음료')
     
-    // 디저트 sheet
+    // 디저트 sheet: 그룹, 상품명, 원가
     const dessertData = [
-      ['상품명', '원가'],
-      ['초코칩쿠키', 500],
-      ['요거트', 800],
-      ['과일컵', 1000],
-      ['젤리', 400],
-      ['초콜릿', 600],
-      ['견과류믹스', 900],
+      ['그룹', '상품명', '원가'],
+      ['당류', '초코칩쿠키', 500],
+      ['프레시', '요거트', 800],
+      ['단백질', '견과류믹스', 900],
+      ['탄수화물', '상온디저트빵', 600],
     ]
     const dessertSheet = XLSX.utils.aoa_to_sheet(dessertData)
     XLSX.utils.book_append_sheet(wb, dessertSheet, '디저트')
@@ -330,8 +332,8 @@ export function ExcelUploader() {
         <h4 className="font-medium text-foreground mb-2">엑셀 파일 형식 안내</h4>
         <ul className="text-sm text-muted-foreground space-y-1">
           <li>- 시트 이름: <span className="text-primary font-medium">FF</span>, <span className="text-primary font-medium">음료</span>, <span className="text-primary font-medium">디저트</span></li>
-          <li>- FF 시트: 상품명, 원가, 타입(김밥/주먹밥/샌드/버거/도시락) 순서</li>
-          <li>- 음료/디저트 시트: 상품명, 원가 순서</li>
+          <li>- FF 시트: <span className="text-primary">중분류</span>(김밥/주먹밥/샌드/버거/도시락), 상품명, 원가 순서</li>
+          <li>- 음료/디저트 시트: <span className="text-primary">그룹</span>, 상품명, 원가 순서</li>
           <li>- 첫 번째 행은 헤더로 인식됩니다</li>
         </ul>
       </div>

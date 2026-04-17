@@ -5,7 +5,8 @@ export interface Product {
   name: string
   cost: number
   category: 'ff' | 'drink' | 'dessert'
-  ffType?: FFType
+  ffType?: FFType // FF의 중분류
+  group?: string // 음료/디저트의 그룹
 }
 
 export interface MealComposition {
