@@ -40,6 +40,12 @@ export const useMealboxStore = create<MealboxStore>()(
       },
       selectedMonth: new Date(),
       
+      // Helper to ensure selectedMonth is always a Date object
+      _getSelectedMonth: () => {
+        const month = get().selectedMonth
+        return month instanceof Date ? month : new Date(month)
+      },
+      
       addProduct: (product) => set((state) => ({
         products: [...state.products, { ...product, id: generateId() }]
       })),
@@ -81,8 +87,10 @@ export const useMealboxStore = create<MealboxStore>()(
         const dosirakProducts = ffProducts.filter(p => p.ffType === '도시락')
         const nonDosirakFF = ffProducts.filter(p => p.ffType !== '도시락')
         
-        const year = selectedMonth.getFullYear()
-        const month = selectedMonth.getMonth()
+        // Ensure selectedMonth is a Date object (may be string after hydration from localStorage)
+        const monthDate = selectedMonth instanceof Date ? selectedMonth : new Date(selectedMonth)
+        const year = monthDate.getFullYear()
+        const month = monthDate.getMonth()
         const daysInMonth = new Date(year, month + 1, 0).getDate()
         
         const newMeals: DailyMeal[] = []

@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/button'
 import { useMealboxStore } from '@/lib/store'
 
 export function Header() {
-  const { generateMeals, dailyMeals, selectedMonth } = useMealboxStore()
+  const { generateMeals, dailyMeals, selectedMonth: storedMonth } = useMealboxStore()
+  
+  // Ensure selectedMonth is a Date object (may be string after hydration from localStorage)
+  const selectedMonth = storedMonth instanceof Date ? storedMonth : new Date(storedMonth)
   
   const handleExport = () => {
     const year = selectedMonth.getFullYear()

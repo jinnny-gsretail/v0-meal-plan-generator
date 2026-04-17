@@ -15,9 +15,11 @@ import {
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
 export function MealCalendar() {
-  const { selectedMonth, setSelectedMonth, dailyMeals, targetCosts } = useMealboxStore()
+  const { selectedMonth: storedMonth, setSelectedMonth, dailyMeals, targetCosts } = useMealboxStore()
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   
+  // Ensure selectedMonth is a Date object (may be string after hydration from localStorage)
+  const selectedMonth = storedMonth instanceof Date ? storedMonth : new Date(storedMonth)
   const year = selectedMonth.getFullYear()
   const month = selectedMonth.getMonth()
   const firstDay = new Date(year, month, 1).getDay()
