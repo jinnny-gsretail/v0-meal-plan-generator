@@ -156,6 +156,9 @@ export const useMealboxStore = create<MealboxStore>()(
             const ffIndex = (day - 1) % ffProducts.length
             const ff = ffProducts[ffIndex]
             
+            // 남은 예산 계산 (FF 원가 제외)
+            let remainingBudget = targetCost - ff.cost
+            
             // 해당 날짜에 사용된 구성품 추적 (하루 식단에 동일 구성품 반복 안됨)
             const usedTodayIds = new Set<string>()
             
@@ -165,10 +168,20 @@ export const useMealboxStore = create<MealboxStore>()(
               drinkGroup = '탄산'
             }
             
+            // 예산 내에서 선택 가능한 음료만 필터링
             let availableDrinks = drinkProducts.filter(d => 
               d.group === drinkGroup && 
-              !usedTodayIds.has(d.id)
+              !usedTodayIds.has(d.id) &&
+              d.cost <= remainingBudget
             )
+            
+            // 예산 내 음료가 없으면 해당 그룹에서 가장 저렴한 것 선택
+            if (availableDrinks.length === 0) {
+              availableDrinks = drinkProducts
+                .filter(d => d.group === drinkGroup && !usedTodayIds.has(d.id))
+                .sort((a, b) => a.cost - b.cost)
+                .slice(0, 1)
+            }
             
             // 사용 안한 음료 우선, 없으면 전체에서 선택
             let unusedDrinks = availableDrinks.filter(d => !usedDrinkIds.has(d.id))
@@ -177,13 +190,16 @@ export const useMealboxStore = create<MealboxStore>()(
               unusedDrinks = availableDrinks
             }
             
+            // 원가가 낮은 순으로 정렬 후 선택 (예산 초과 방지)
+            unusedDrinks.sort((a, b) => a.cost - b.cost)
             const drink = unusedDrinks.length > 0 
-              ? unusedDrinks[Math.floor(Math.random() * unusedDrinks.length)]
-              : availableDrinks[Math.floor(Math.random() * availableDrinks.length)]
+              ? unusedDrinks[Math.floor(Math.random() * Math.min(3, unusedDrinks.length))] // 저렴한 상위 3개 중 랜덤
+              : availableDrinks[0]
             
             if (drink) {
               usedDrinkIds.add(drink.id)
               usedTodayIds.add(drink.id)
+              remainingBudget -= drink.cost
             }
             
             const desserts: Product[] = []
@@ -191,10 +207,21 @@ export const useMealboxStore = create<MealboxStore>()(
             // 디저트1 선택
             if (dessert1Count > 0) {
               const dessert1Group = DESSERT1_GROUP_BY_DAY[dayOfWeek]
+              
+              // 예산 내에서 선택 가능한 디저트만 필터링
               let availableDesserts1 = dessertProducts.filter(d => 
                 d.group === dessert1Group && 
-                !usedTodayIds.has(d.id)
+                !usedTodayIds.has(d.id) &&
+                d.cost <= remainingBudget
               )
+              
+              // 예산 내 디저트가 없으면 해당 그룹에서 가장 저렴한 것 선택
+              if (availableDesserts1.length === 0) {
+                availableDesserts1 = dessertProducts
+                  .filter(d => d.group === dessert1Group && !usedTodayIds.has(d.id))
+                  .sort((a, b) => a.cost - b.cost)
+                  .slice(0, 1)
+              }
               
               let unusedDesserts1 = availableDesserts1.filter(d => !usedDessert1Ids.has(d.id))
               if (unusedDesserts1.length === 0) {
@@ -202,26 +229,50 @@ export const useMealboxStore = create<MealboxStore>()(
                 unusedDesserts1 = availableDesserts1
               }
               
+              // 원가가 낮은 순으로 정렬 후 선택
+              unusedDesserts1.sort((a, b) => a.cost - b.cost)
               const dessert1 = unusedDesserts1.length > 0
-                ? unusedDesserts1[Math.floor(Math.random() * unusedDesserts1.length)]
-                : availableDesserts1[Math.floor(Math.random() * availableDesserts1.length)]
+                ? unusedDesserts1[Math.floor(Math.random() * Math.min(3, unusedDesserts1.length))]
+                : availableDesserts1[0]
               
               if (dessert1) {
                 desserts.push(dessert1)
                 usedDessert1Ids.add(dessert1.id)
                 usedTodayIds.add(dessert1.id)
+                remainingBudget -= dessert1.cost
               }
             }
             
             // 디저트2 선택
             if (dessert2Count > 0) {
               const dessert2Groups = DESSERT2_GROUPS_BY_DAY[dayOfWeek]
-              const selectedGroup = dessert2Groups[Math.floor(Math.random() * dessert2Groups.length)]
               
-              let availableDesserts2 = dessertProducts.filter(d => 
-                d.group === selectedGroup && 
-                !usedTodayIds.has(d.id)
-              )
+              // 두 그룹 중 예산 내 디저트가 있는 그룹 우선
+              let availableDesserts2: Product[] = []
+              for (const group of dessert2Groups) {
+                const groupDesserts = dessertProducts.filter(d => 
+                  d.group === group && 
+                  !usedTodayIds.has(d.id) &&
+                  d.cost <= remainingBudget
+                )
+                if (groupDesserts.length > 0) {
+                  availableDesserts2 = groupDesserts
+                  break
+                }
+              }
+              
+              // 예산 내 디저트가 없으면 모든 그룹에서 가장 저렴한 것 선택
+              if (availableDesserts2.length === 0) {
+                for (const group of dessert2Groups) {
+                  const groupDesserts = dessertProducts
+                    .filter(d => d.group === group && !usedTodayIds.has(d.id))
+                    .sort((a, b) => a.cost - b.cost)
+                  if (groupDesserts.length > 0) {
+                    availableDesserts2 = groupDesserts.slice(0, 1)
+                    break
+                  }
+                }
+              }
               
               let unusedDesserts2 = availableDesserts2.filter(d => !usedDessert2Ids.has(d.id))
               if (unusedDesserts2.length === 0) {
@@ -229,9 +280,11 @@ export const useMealboxStore = create<MealboxStore>()(
                 unusedDesserts2 = availableDesserts2
               }
               
+              // 원가가 낮은 순으로 정렬 후 선택
+              unusedDesserts2.sort((a, b) => a.cost - b.cost)
               const dessert2 = unusedDesserts2.length > 0
-                ? unusedDesserts2[Math.floor(Math.random() * unusedDesserts2.length)]
-                : availableDesserts2[Math.floor(Math.random() * availableDesserts2.length)]
+                ? unusedDesserts2[Math.floor(Math.random() * Math.min(3, unusedDesserts2.length))]
+                : availableDesserts2[0]
               
               if (dessert2) {
                 desserts.push(dessert2)
@@ -243,7 +296,6 @@ export const useMealboxStore = create<MealboxStore>()(
             // 총 원가 계산
             const totalCost = ff.cost + (drink?.cost || 0) + desserts.reduce((sum, d) => sum + d.cost, 0)
             
-            // 원가 체크 (103% 초과 시 경고 표시용으로 저장은 함)
             const composition: MealComposition = {
               ff,
               drink,
