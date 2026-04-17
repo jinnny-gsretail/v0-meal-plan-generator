@@ -24,7 +24,7 @@ interface UploadResult {
 const validFFTypes: FFType[] = ['김밥', '주먹밥', '샌드', '버거', '도시락']
 
 export function ExcelUploader() {
-  const { addProducts, clearProducts, products } = useMealboxStore()
+  const { setProducts, products } = useMealboxStore()
   const [isDragging, setIsDragging] = useState(false)
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -152,8 +152,7 @@ export function ExcelUploader() {
     setUploadResult(result)
 
     if (result.success && result.data) {
-      clearProducts()
-      addProducts(result.data)
+      setProducts(result.data)
     }
 
     setIsProcessing(false)

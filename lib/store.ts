@@ -11,6 +11,7 @@ interface MealboxStore {
   // Product actions
   addProduct: (product: Omit<Product, 'id'>) => void
   addProducts: (products: Omit<Product, 'id'>[]) => void
+  setProducts: (products: Omit<Product, 'id'>[]) => void
   updateProduct: (id: string, product: Partial<Product>) => void
   deleteProduct: (id: string) => void
   clearProducts: (category?: 'ff' | 'drink' | 'dessert') => void
@@ -46,6 +47,10 @@ export const useMealboxStore = create<MealboxStore>()(
       addProducts: (products) => set((state) => ({
         products: [...state.products, ...products.map(p => ({ ...p, id: generateId() }))]
       })),
+      
+      setProducts: (products) => set({
+        products: products.map(p => ({ ...p, id: generateId() }))
+      }),
       
       updateProduct: (id, updates) => set((state) => ({
         products: state.products.map(p => p.id === id ? { ...p, ...updates } : p)
