@@ -1,12 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { Product, DailyMeal, PRICE_POINT_CONFIGS, MealComposition } from './types'
+import { Product, DailyMeal, PRICE_POINT_CONFIGS, MealComposition, MealPlanName } from './types'
 
 interface MealboxStore {
   products: Product[]
   dailyMeals: DailyMeal[]
   targetCosts: { [price: number]: number }
   selectedMonth: Date
+  selectedMealPlan: MealPlanName | null
   
   // Product actions
   addProduct: (product: Omit<Product, 'id'>) => void
@@ -21,6 +22,7 @@ interface MealboxStore {
   
   // Meal actions
   setSelectedMonth: (date: Date) => void
+  setSelectedMealPlan: (mealPlan: MealPlanName | null) => void
   generateMeals: () => void
   updateMealComposition: (date: string, pricePoint: number, composition: MealComposition | null) => void
 }
@@ -39,6 +41,7 @@ export const useMealboxStore = create<MealboxStore>()(
         6500: 3300,
       },
       selectedMonth: new Date(),
+      selectedMealPlan: null,
       
       // Helper to ensure selectedMonth is always a Date object
       _getSelectedMonth: () => {
@@ -77,6 +80,8 @@ export const useMealboxStore = create<MealboxStore>()(
       })),
       
       setSelectedMonth: (date) => set({ selectedMonth: date }),
+      
+      setSelectedMealPlan: (mealPlan) => set({ selectedMealPlan: mealPlan }),
       
       generateMeals: () => {
         const { products, targetCosts, selectedMonth } = get()

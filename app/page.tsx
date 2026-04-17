@@ -7,6 +7,7 @@ import { ProductManager } from '@/components/product-manager'
 import { ExcelUploader } from '@/components/excel-uploader'
 import { CostSettings } from '@/components/cost-settings'
 import { MealCalendar } from '@/components/meal-calendar'
+import { MealPlanSelector } from '@/components/meal-plan-selector'
 import { Package, Settings, Calendar } from 'lucide-react'
 
 export default function Home() {
@@ -96,7 +97,11 @@ export default function Home() {
             </div>
           </TabsContent>
           
-          <TabsContent value="calendar">
+          <TabsContent value="calendar" className="space-y-6">
+            {/* 식단 선택 버튼 */}
+            <MealPlanSelector />
+            
+            {/* 캘린더 */}
             <MealCalendar />
             
             <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
