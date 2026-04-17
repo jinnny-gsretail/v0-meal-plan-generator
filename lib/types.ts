@@ -30,6 +30,39 @@ export const ALL_MEAL_PLANS: { name: MealPlanName; ffType: FFType; price: number
       }))
   )
 
+// 요일별 음료 그룹 매핑 (0: 일요일, 1: 월요일, ...)
+export const DRINK_GROUP_BY_DAY: { [day: number]: string } = {
+  0: '주스',     // 일요일
+  1: '건강',     // 월요일
+  2: '주스',     // 화요일
+  3: '탄산',     // 수요일
+  4: '건강',     // 목요일
+  5: '주스',     // 금요일
+  6: '주스',     // 토요일
+}
+
+// 요일별 디저트1 그룹 매핑
+export const DESSERT1_GROUP_BY_DAY: { [day: number]: string } = {
+  0: '단백질',   // 일요일
+  1: '프레시',   // 월요일
+  2: '탄수화물', // 화요일
+  3: '단백질',   // 수요일
+  4: '당류',     // 목요일
+  5: '탄수화물', // 금요일
+  6: '탄수화물', // 토요일
+}
+
+// 요일별 디저트2 그룹 매핑 (2개 중 랜덤 선택)
+export const DESSERT2_GROUPS_BY_DAY: { [day: number]: string[] } = {
+  0: ['탄수화물'],           // 일요일
+  1: ['프레시', '탄수화물'], // 월요일
+  2: ['프레시', '단백질'],   // 화요일
+  3: ['탄수화물', '당류'],   // 수요일
+  4: ['탄수화물', '단백질'], // 목요일
+  5: ['당류', '단백질'],     // 금요일
+  6: ['단백질'],             // 토요일
+}
+
 export interface Product {
   id: string
   name: string

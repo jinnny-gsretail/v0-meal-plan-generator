@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useMealboxStore } from '@/lib/store'
-import { PRICE_POINT_CONFIGS, MealComposition } from '@/lib/types'
+import { MealComposition, ALL_MEAL_PLANS } from '@/lib/types'
 import {
   Dialog,
   DialogContent,
@@ -15,10 +15,16 @@ import {
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
 export function MealCalendar() {
-  const { selectedMonth: storedMonth, setSelectedMonth, dailyMeals, targetCosts } = useMealboxStore()
+  const { 
+    selectedMonth: storedMonth, 
+    setSelectedMonth, 
+    mealPlanMeals, 
+    targetCosts,
+    selectedMealPlan 
+  } = useMealboxStore()
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   
-  // Ensure selectedMonth is a Date object (may be string after hydration from localStorage)
+  // Ensure selectedMonth is a Date object
   const selectedMonth = storedMonth instanceof Date ? storedMonth : new Date(storedMonth)
   const year = selectedMonth.getFullYear()
   const month = selectedMonth.getMonth()
@@ -33,9 +39,15 @@ export function MealCalendar() {
     setSelectedMonth(new Date(year, month + 1, 1))
   }
   
+  // 현재 선택된 식단의 데이터 가져오기
+  const currentMealPlanData = selectedMealPlan ? mealPlanMeals[selectedMealPlan] || [] : []
+  const currentMealPlanInfo = selectedMealPlan 
+    ? ALL_MEAL_PLANS.find(m => m.name === selectedMealPlan) 
+    : null
+  
   const getMealForDate = (day: number) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    return dailyMeals.find(m => m.date === dateStr)
+    return currentMealPlanData.find(m => m.date === dateStr)
   }
   
   const calendarDays = []
@@ -46,7 +58,31 @@ export function MealCalendar() {
     calendarDays.push(i)
   }
   
-  const selectedMeal = selectedDate ? dailyMeals.find(m => m.date === selectedDate) : null
+  const selectedMeal = selectedDate 
+    ? currentMealPlanData.find(m => m.date === selectedDate) 
+    : null
+
+  // 선택된 식단이 없으면 안내 메시지 표시
+  if (!selectedMealPlan) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-8 text-center">
+        <p className="text-muted-foreground">
+          위에서 확인하고 싶은 식단을 선택해주세요.
+        </p>
+      </div>
+    )
+  }
+
+  // 식단 데이터가 없으면 생성 안내
+  if (currentMealPlanData.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-8 text-center">
+        <p className="text-muted-foreground">
+          식단이 생성되지 않았습니다. 상품을 등록하고 &apos;식단 자동 생성&apos; 버튼을 클릭해주세요.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-lg border border-border bg-card">
@@ -55,9 +91,14 @@ export function MealCalendar() {
         <Button variant="ghost" size="icon" onClick={prevMonth}>
           <ChevronLeft className="w-5 h-5" />
         </Button>
-        <h2 className="text-lg font-semibold text-foreground">
-          {year}년 {month + 1}월
-        </h2>
+        <div className="text-center">
+          <h2 className="text-lg font-semibold text-foreground">
+            {year}년 {month + 1}월
+          </h2>
+          <p className="text-sm text-primary">
+            {selectedMealPlan} ({currentMealPlanInfo?.price.toLocaleString()}원)
+          </p>
+        </div>
         <Button variant="ghost" size="icon" onClick={nextMonth}>
           <ChevronRight className="w-5 h-5" />
         </Button>
@@ -69,7 +110,7 @@ export function MealCalendar() {
           <div 
             key={day} 
             className={`p-2 text-center text-sm font-medium ${
-              i === 0 ? 'text-destructive' : i === 6 ? 'text-drink' : 'text-muted-foreground'
+              i === 0 ? 'text-destructive' : i === 6 ? 'text-primary' : 'text-muted-foreground'
             }`}
           >
             {day}
@@ -83,13 +124,17 @@ export function MealCalendar() {
           const meal = day ? getMealForDate(day) : null
           const dateStr = day ? `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}` : ''
           const isWeekend = idx % 7 === 0 || idx % 7 === 6
-          const hasAllMeals = meal && PRICE_POINT_CONFIGS.every(c => meal.compositions[c.price])
-          const hasSomeMeals = meal && PRICE_POINT_CONFIGS.some(c => meal.compositions[c.price])
+          
+          const composition = meal && currentMealPlanInfo 
+            ? meal.compositions[currentMealPlanInfo.price] 
+            : null
+          const targetCost = currentMealPlanInfo ? targetCosts[currentMealPlanInfo.price] * 1.03 : 0
+          const isOverBudget = composition && composition.totalCost > targetCost
           
           return (
             <div
               key={idx}
-              className={`min-h-24 p-2 border-r border-b border-border last:border-r-0 
+              className={`min-h-28 p-2 border-r border-b border-border last:border-r-0 
                 ${!day ? 'bg-secondary/20' : 'hover:bg-secondary/30 cursor-pointer'}
                 ${isWeekend ? 'bg-secondary/10' : ''}`}
               onClick={() => day && setSelectedDate(dateStr)}
@@ -97,43 +142,33 @@ export function MealCalendar() {
               {day && (
                 <>
                   <div className={`text-sm font-medium mb-1 ${
-                    idx % 7 === 0 ? 'text-destructive' : idx % 7 === 6 ? 'text-drink' : 'text-foreground'
+                    idx % 7 === 0 ? 'text-destructive' : idx % 7 === 6 ? 'text-primary' : 'text-foreground'
                   }`}>
                     {day}
                   </div>
-                  {meal && (
+                  {composition && (
                     <div className="space-y-0.5">
-                      {PRICE_POINT_CONFIGS.map(config => {
-                        const composition = meal.compositions[config.price]
-                        const isOverBudget = composition && composition.totalCost > targetCosts[config.price]
-                        
-                        return (
-                          <div 
-                            key={config.price}
-                            className={`text-xs px-1 py-0.5 rounded truncate ${
-                              composition
-                                ? isOverBudget
-                                  ? 'bg-destructive/20 text-destructive'
-                                  : 'bg-primary/20 text-primary'
-                                : 'bg-muted text-muted-foreground'
-                            }`}
-                          >
-                            {composition ? (
-                              <span className="flex items-center gap-1">
-                                {isOverBudget && <AlertCircle className="w-3 h-3 shrink-0" />}
-                                <span className="truncate">{config.price / 1000}K</span>
-                              </span>
-                            ) : (
-                              <span>{config.price / 1000}K ⚠</span>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                  {!meal && hasSomeMeals === undefined && (
-                    <div className="text-xs text-muted-foreground">
-                      식단 없음
+                      {/* FF */}
+                      {composition.ff && (
+                        <div className="text-xs px-1 py-0.5 rounded bg-ff/20 text-ff truncate">
+                          {composition.ff.name}
+                        </div>
+                      )}
+                      {/* 음료 */}
+                      {composition.drink && (
+                        <div className="text-xs px-1 py-0.5 rounded bg-primary/20 text-primary truncate">
+                          {composition.drink.name}
+                        </div>
+                      )}
+                      {/* 원가 */}
+                      <div className={`text-xs px-1 py-0.5 rounded flex items-center gap-1 ${
+                        isOverBudget 
+                          ? 'bg-destructive/20 text-destructive' 
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {isOverBudget && <AlertCircle className="w-3 h-3 shrink-0" />}
+                        {composition.totalCost.toLocaleString()}원
+                      </div>
                     </div>
                   )}
                 </>
@@ -153,28 +188,16 @@ export function MealCalendar() {
                 month: 'long',
                 day: 'numeric',
                 weekday: 'long'
-              })} 식단
+              })} - {selectedMealPlan}
             </DialogTitle>
           </DialogHeader>
           
-          {selectedMeal && (
-            <div className="space-y-4">
-              {PRICE_POINT_CONFIGS.map(config => {
-                const composition = selectedMeal.compositions[config.price]
-                const targetCost = targetCosts[config.price]
-                const isOverBudget = composition && composition.totalCost > targetCost
-                
-                return (
-                  <MealDetail
-                    key={config.price}
-                    price={config.price}
-                    composition={composition}
-                    targetCost={targetCost}
-                    isOverBudget={isOverBudget}
-                  />
-                )
-              })}
-            </div>
+          {selectedMeal && currentMealPlanInfo && (
+            <MealDetail
+              price={currentMealPlanInfo.price}
+              composition={selectedMeal.compositions[currentMealPlanInfo.price]}
+              targetCost={targetCosts[currentMealPlanInfo.price]}
+            />
           )}
         </DialogContent>
       </Dialog>
@@ -186,10 +209,12 @@ interface MealDetailProps {
   price: number
   composition: MealComposition | null
   targetCost: number
-  isOverBudget?: boolean
 }
 
-function MealDetail({ price, composition, targetCost, isOverBudget }: MealDetailProps) {
+function MealDetail({ price, composition, targetCost }: MealDetailProps) {
+  const maxCost = targetCost * 1.03
+  const isOverBudget = composition && composition.totalCost > maxCost
+  
   return (
     <div className={`p-4 rounded-lg border ${
       isOverBudget 
@@ -206,7 +231,7 @@ function MealDetail({ price, composition, targetCost, isOverBudget }: MealDetail
           {isOverBudget && (
             <span className="text-xs px-2 py-0.5 bg-destructive/20 text-destructive rounded-full flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
-              원가 초과
+              원가 초과 (103% 초과)
             </span>
           )}
         </div>
@@ -215,7 +240,7 @@ function MealDetail({ price, composition, targetCost, isOverBudget }: MealDetail
             <span className={isOverBudget ? 'text-destructive font-medium' : 'text-muted-foreground'}>
               {composition.totalCost.toLocaleString()}원
             </span>
-            <span className="text-muted-foreground"> / {targetCost.toLocaleString()}원</span>
+            <span className="text-muted-foreground"> / {targetCost.toLocaleString()}원 (상한: {Math.round(maxCost).toLocaleString()}원)</span>
           </div>
         )}
       </div>
@@ -224,21 +249,21 @@ function MealDetail({ price, composition, targetCost, isOverBudget }: MealDetail
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {composition.ff && (
             <div className="p-2 bg-ff/10 rounded border border-ff/20">
-              <div className="text-xs text-ff mb-1">FF</div>
+              <div className="text-xs text-ff mb-1">FF ({composition.ff.ffType})</div>
               <div className="text-sm font-medium text-foreground">{composition.ff.name}</div>
               <div className="text-xs text-muted-foreground">{composition.ff.cost.toLocaleString()}원</div>
             </div>
           )}
           {composition.drink && (
-            <div className="p-2 bg-drink/10 rounded border border-drink/20">
-              <div className="text-xs text-drink mb-1">음료</div>
+            <div className="p-2 bg-primary/10 rounded border border-primary/20">
+              <div className="text-xs text-primary mb-1">음료 ({composition.drink.group || '-'})</div>
               <div className="text-sm font-medium text-foreground">{composition.drink.name}</div>
               <div className="text-xs text-muted-foreground">{composition.drink.cost.toLocaleString()}원</div>
             </div>
           )}
           {composition.desserts.map((dessert, i) => (
             <div key={i} className="p-2 bg-dessert/10 rounded border border-dessert/20">
-              <div className="text-xs text-dessert mb-1">디저트 {i + 1}</div>
+              <div className="text-xs text-dessert mb-1">디저트{i + 1} ({dessert.group || '-'})</div>
               <div className="text-sm font-medium text-foreground">{dessert.name}</div>
               <div className="text-xs text-muted-foreground">{dessert.cost.toLocaleString()}원</div>
             </div>

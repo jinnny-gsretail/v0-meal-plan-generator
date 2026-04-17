@@ -16,24 +16,36 @@ export function MealPlanSelector() {
         </span>
       </div>
       
-      <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-12 gap-2">
-        {ALL_MEAL_PLANS.map((plan) => (
-          <button
-            key={plan.name}
-            onClick={() => setSelectedMealPlan(
-              selectedMealPlan === plan.name ? null : plan.name
-            )}
-            className={cn(
-              "px-3 py-2 text-sm font-medium rounded-md transition-all",
-              "border border-border hover:border-primary/50",
-              selectedMealPlan === plan.name
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-secondary/30 text-foreground hover:bg-secondary/50"
-            )}
-          >
-            {plan.name}
-          </button>
-        ))}
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-11 gap-2">
+        {ALL_MEAL_PLANS.map((plan) => {
+          // FF 타입별 색상 지정
+          const colorClass = plan.ffType === '김밥' 
+            ? 'hover:border-green-500/50 data-[selected=true]:bg-green-600 data-[selected=true]:border-green-600'
+            : plan.ffType === '주먹밥'
+            ? 'hover:border-amber-500/50 data-[selected=true]:bg-amber-600 data-[selected=true]:border-amber-600'
+            : plan.ffType === '샌드'
+            ? 'hover:border-blue-500/50 data-[selected=true]:bg-blue-600 data-[selected=true]:border-blue-600'
+            : 'hover:border-red-500/50 data-[selected=true]:bg-red-600 data-[selected=true]:border-red-600'
+          
+          return (
+            <button
+              key={plan.name}
+              data-selected={selectedMealPlan === plan.name}
+              onClick={() => setSelectedMealPlan(
+                selectedMealPlan === plan.name ? null : plan.name
+              )}
+              className={cn(
+                "px-3 py-2 text-sm font-medium rounded-md transition-all",
+                "border border-border",
+                "bg-secondary/30 text-foreground hover:bg-secondary/50",
+                "data-[selected=true]:text-white",
+                colorClass
+              )}
+            >
+              {plan.name}
+            </button>
+          )
+        })}
       </div>
       
       {selectedMealPlan && (
