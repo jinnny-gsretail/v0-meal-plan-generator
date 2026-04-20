@@ -71,31 +71,31 @@ function DatePickerDropdown({
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-1.5 text-sm bg-secondary/50 border border-border rounded-md hover:bg-secondary transition-colors"
+        className="flex items-center gap-2 px-4 py-2 text-sm bg-secondary/50 border border-border rounded-md hover:bg-secondary transition-colors min-w-[140px] justify-between"
       >
-        <span className={selectedDate ? 'text-foreground' : 'text-muted-foreground'}>
+        <span className={selectedDate ? 'text-foreground font-medium' : 'text-muted-foreground'}>
           {formatDate(selectedDate)}
         </span>
-        <ChevronDown className={cn("w-3 h-3 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
+        <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
       </button>
       
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute top-full mt-1 right-0 z-50 p-3 rounded-lg border border-border bg-card shadow-lg">
-            <div className="flex items-center justify-between mb-2">
-              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={prevMonth}>
-                <ChevronLeft className="w-3 h-3" />
+          <div className="absolute top-full mt-2 right-0 z-50 p-4 rounded-lg border border-border bg-card shadow-xl min-w-[280px]">
+            <div className="flex items-center justify-between mb-3">
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={prevMonth}>
+                <ChevronLeft className="w-4 h-4" />
               </Button>
-              <span className="text-xs font-medium">{year}년 {month + 1}월</span>
-              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={nextMonth}>
-                <ChevronRight className="w-3 h-3" />
+              <span className="text-base font-semibold">{year}년 {month + 1}월</span>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={nextMonth}>
+                <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
-            <div className="grid grid-cols-7 gap-0.5 text-center">
+            <div className="grid grid-cols-7 gap-1 text-center">
               {['일', '월', '화', '수', '목', '금', '토'].map(d => (
                 <div key={d} className={cn(
-                  "h-6 w-6 flex items-center justify-center text-[10px] font-medium",
+                  "h-8 w-8 flex items-center justify-center text-sm font-medium",
                   d === '일' && "text-destructive",
                   d === '토' && "text-primary"
                 )}>
@@ -109,7 +109,7 @@ function DatePickerDropdown({
                       onClick={() => !isDisabled(day) && handleSelect(day)}
                       disabled={isDisabled(day)}
                       className={cn(
-                        "h-6 w-6 rounded text-[10px] hover:bg-secondary transition-colors",
+                        "h-8 w-8 rounded-md text-sm font-medium hover:bg-secondary transition-colors",
                         isSelected(day) && "bg-primary text-primary-foreground hover:bg-primary/90",
                         isDisabled(day) && "opacity-30 cursor-not-allowed",
                         idx % 7 === 0 && !isSelected(day) && "text-destructive",
@@ -119,7 +119,7 @@ function DatePickerDropdown({
                       {day}
                     </button>
                   ) : (
-                    <div className="h-6 w-6" />
+                    <div className="h-8 w-8" />
                   )}
                 </div>
               ))}
@@ -148,10 +148,10 @@ export function DateRangeSelector() {
     : 0
   
   return (
-    <div className="flex items-center gap-3 px-4 py-2 rounded-lg bg-card border border-border">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Calendar className="w-4 h-4" />
-        <span>식단 기간</span>
+    <div className="flex-1 flex items-center justify-end gap-4 px-6 py-3 rounded-lg bg-card border border-border">
+      <div className="flex items-center gap-2 text-base text-muted-foreground">
+        <Calendar className="w-5 h-5" />
+        <span className="font-medium">식단 기간</span>
       </div>
       
       <DatePickerDropdown 
@@ -161,7 +161,7 @@ export function DateRangeSelector() {
         maxDate={endDate}
       />
       
-      <span className="text-muted-foreground">~</span>
+      <span className="text-lg text-muted-foreground">~</span>
       
       <DatePickerDropdown 
         selectedDate={endDate}
@@ -171,13 +171,13 @@ export function DateRangeSelector() {
       />
       
       {dayCount > 0 && (
-        <span className="text-xs text-primary font-medium">
-          ({dayCount}일)
+        <span className="text-sm text-primary font-semibold px-3 py-1 bg-primary/10 rounded-md">
+          총 {dayCount}일
         </span>
       )}
       
       {startDate && endDate && startDate > endDate && (
-        <span className="text-xs text-destructive">
+        <span className="text-sm text-destructive font-medium">
           날짜 오류
         </span>
       )}
