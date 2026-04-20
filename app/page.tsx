@@ -20,20 +20,25 @@ export default function Home() {
       
       <main className="container mx-auto px-4 py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="bg-card border border-border">
-            <TabsTrigger value="products" className="gap-2">
-              <Package className="w-4 h-4" />
-              상품 관리
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="gap-2">
-              <Settings className="w-4 h-4" />
-              원가 설정
-            </TabsTrigger>
-            <TabsTrigger value="calendar" className="gap-2">
-              <Calendar className="w-4 h-4" />
-              식단 캘린더
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex items-center justify-between gap-4">
+            <TabsList className="bg-card border border-border">
+              <TabsTrigger value="products" className="gap-2">
+                <Package className="w-4 h-4" />
+                상품 관리
+              </TabsTrigger>
+              <TabsTrigger value="settings" className="gap-2">
+                <Settings className="w-4 h-4" />
+                원가 설정
+              </TabsTrigger>
+              <TabsTrigger value="calendar" className="gap-2">
+                <Calendar className="w-4 h-4" />
+                식단 캘린더
+              </TabsTrigger>
+            </TabsList>
+            
+            {/* 날짜 범위 선택 - 탭 우측에 배치 */}
+            <DateRangeSelector />
+          </div>
           
           <TabsContent value="products" className="space-y-6">
             {/* 엑셀 업로더 */}
@@ -102,18 +107,8 @@ export default function Home() {
             {/* 식단 선택 버튼 */}
             <MealPlanSelector />
             
-            {/* 캘린더와 날짜 선택 - 가로 배치 */}
-            <div className="flex gap-6">
-              {/* 캘린더 (좌측) */}
-              <div className="flex-1">
-                <MealCalendar />
-              </div>
-              
-              {/* 날짜 범위 선택 (우측) */}
-              <div className="w-72 shrink-0">
-                <DateRangeSelector />
-              </div>
-            </div>
+            {/* 캘린더 */}
+            <MealCalendar />
             
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
               <div className="flex items-center gap-2">
