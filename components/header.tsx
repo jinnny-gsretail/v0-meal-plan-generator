@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useMealboxStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-function DatePicker({ 
+export function DatePicker({ 
   selectedDate, 
   onSelect, 
   label 
@@ -121,8 +121,6 @@ export function Header() {
     mealPlanMeals, 
     startDate: storedStartDate, 
     endDate: storedEndDate,
-    setStartDate,
-    setEndDate,
     selectedMealPlan
   } = useMealboxStore()
   
@@ -199,36 +197,7 @@ export function Header() {
           </div>
         </div>
         
-        {/* 날짜 범위 선택 */}
-        <div className="mt-4 flex items-center gap-4 p-3 rounded-lg bg-secondary/30 border border-border">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">시작일</span>
-            <DatePicker 
-              selectedDate={startDate} 
-              onSelect={setStartDate}
-              label="식단 시작일 선택"
-            />
-          </div>
-          <span className="text-muted-foreground">~</span>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">종료일</span>
-            <DatePicker 
-              selectedDate={endDate} 
-              onSelect={setEndDate}
-              label="식단 종료일 선택"
-            />
-          </div>
-          {startDate && endDate && startDate <= endDate && (
-            <span className="text-xs text-muted-foreground ml-2">
-              (총 {Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1}일)
-            </span>
-          )}
-          {startDate && endDate && startDate > endDate && (
-            <span className="text-xs text-destructive ml-2">
-              종료일은 시작일 이후여야 합니다
-            </span>
-          )}
-        </div>
+        
       </div>
     </header>
   )

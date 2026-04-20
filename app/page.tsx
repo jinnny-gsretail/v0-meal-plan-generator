@@ -8,6 +8,7 @@ import { ExcelUploader } from '@/components/excel-uploader'
 import { CostSettings } from '@/components/cost-settings'
 import { MealCalendar } from '@/components/meal-calendar'
 import { MealPlanSelector } from '@/components/meal-plan-selector'
+import { DateRangeSelector } from '@/components/date-range-selector'
 import { Package, Settings, Calendar } from 'lucide-react'
 
 export default function Home() {
@@ -101,10 +102,20 @@ export default function Home() {
             {/* 식단 선택 버튼 */}
             <MealPlanSelector />
             
-            {/* 캘린더 */}
-            <MealCalendar />
+            {/* 캘린더와 날짜 선택 - 가로 배치 */}
+            <div className="flex gap-6">
+              {/* 캘린더 (좌측) */}
+              <div className="flex-1">
+                <MealCalendar />
+              </div>
+              
+              {/* 날짜 범위 선택 (우측) */}
+              <div className="w-72 shrink-0">
+                <DateRangeSelector />
+              </div>
+            </div>
             
-            <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded bg-primary/20" />
                 <span>식단 구성 완료</span>
