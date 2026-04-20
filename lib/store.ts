@@ -23,6 +23,8 @@ interface MealboxStore {
   targetCosts: { [price: number]: number }
   selectedMonth: Date
   selectedMealPlan: MealPlanName | null
+  startDate: Date | null
+  endDate: Date | null
   
   // Product actions
   addProduct: (product: Omit<Product, 'id'>) => void
@@ -38,6 +40,8 @@ interface MealboxStore {
   // Meal actions
   setSelectedMonth: (date: Date) => void
   setSelectedMealPlan: (mealPlan: MealPlanName | null) => void
+  setStartDate: (date: Date | null) => void
+  setEndDate: (date: Date | null) => void
   generateMeals: () => void
   updateMealComposition: (date: string, pricePoint: number, composition: MealComposition | null) => void
 }
@@ -58,6 +62,8 @@ export const useMealboxStore = create<MealboxStore>()(
       },
       selectedMonth: new Date(),
       selectedMealPlan: null,
+      startDate: null,
+      endDate: null,
       
       // Helper to ensure selectedMonth is always a Date object
       _getSelectedMonth: () => {
@@ -99,17 +105,29 @@ export const useMealboxStore = create<MealboxStore>()(
       
       setSelectedMealPlan: (mealPlan) => set({ selectedMealPlan: mealPlan }),
       
+      setStartDate: (date) => set({ startDate: date }),
+      
+      setEndDate: (date) => set({ endDate: date }),
+      
       generateMeals: () => {
-        const { products, targetCosts, selectedMonth } = get()
+        const { products, targetCosts, startDate: storedStartDate, endDate: storedEndDate } = get()
         
         const drinkProducts = products.filter(p => p.category === 'drink')
         const dessertProducts = products.filter(p => p.category === 'dessert')
         
-        // Ensure selectedMonth is a Date object
-        const monthDate = selectedMonth instanceof Date ? selectedMonth : new Date(selectedMonth)
-        const year = monthDate.getFullYear()
-        const month = monthDate.getMonth()
-        const daysInMonth = new Date(year, month + 1, 0).getDate()
+        // Ensure dates are Date objects
+        const startDate = storedStartDate instanceof Date ? storedStartDate : storedStartDate ? new Date(storedStartDate) : new Date()
+        const endDate = storedEndDate instanceof Date ? storedEndDate : storedEndDate ? new Date(storedEndDate) : new Date()
+        
+        // 시작일부터 종료일까지의 모든 날짜 생성
+        const dates: Date[] = []
+        const currentDate = new Date(startDate)
+        while (currentDate <= endDate) {
+          dates.push(new Date(currentDate))
+          currentDate.setDate(currentDate.getDate() + 1)
+        }
+        
+        if (dates.length === 0) return
         
         const mealPlanMeals: MealPlanDailyMeals = {}
         
@@ -148,12 +166,16 @@ export const useMealboxStore = create<MealboxStore>()(
           const usedDessert1Ids = new Set<string>()
           const usedDessert2Ids = new Set<string>()
           
-          for (let day = 1; day <= daysInMonth; day++) {
+          for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
+            const currentDate = dates[dayIndex]
+            const year = currentDate.getFullYear()
+            const month = currentDate.getMonth()
+            const day = currentDate.getDate()
             const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-            const dayOfWeek = new Date(year, month, day).getDay()
+            const dayOfWeek = currentDate.getDay()
             
             // FF: 업로드 리스트 순서 반복
-            const ffIndex = (day - 1) % ffProducts.length
+            const ffIndex = dayIndex % ffProducts.length
             const ff = ffProducts[ffIndex]
             
             // 남은 예산 계산 (FF 원가 제외)

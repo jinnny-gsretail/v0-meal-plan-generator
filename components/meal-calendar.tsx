@@ -20,11 +20,17 @@ export function MealCalendar() {
     setSelectedMonth, 
     mealPlanMeals, 
     targetCosts,
-    selectedMealPlan 
+    selectedMealPlan,
+    startDate: storedStartDate,
+    endDate: storedEndDate
   } = useMealboxStore()
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   
-  // Ensure selectedMonth is a Date object
+  // Ensure dates are Date objects
+  const startDate = storedStartDate instanceof Date ? storedStartDate : storedStartDate ? new Date(storedStartDate) : null
+  const endDate = storedEndDate instanceof Date ? storedEndDate : storedEndDate ? new Date(storedEndDate) : null
+  
+  // 현재 보여줄 월 (selectedMonth 기준)
   const selectedMonth = storedMonth instanceof Date ? storedMonth : new Date(storedMonth)
   const year = selectedMonth.getFullYear()
   const month = selectedMonth.getMonth()
@@ -37,6 +43,13 @@ export function MealCalendar() {
   
   const nextMonth = () => {
     setSelectedMonth(new Date(year, month + 1, 1))
+  }
+  
+  // 날짜가 시작일~종료일 범위 내에 있는지 확인
+  const isInRange = (day: number) => {
+    if (!startDate || !endDate) return false
+    const date = new Date(year, month, day)
+    return date >= startDate && date <= endDate
   }
   
   // 현재 선택된 식단의 데이터 가져오기
@@ -98,6 +111,11 @@ export function MealCalendar() {
           <p className="text-sm text-primary">
             {selectedMealPlan} ({currentMealPlanInfo?.price.toLocaleString()}원)
           </p>
+          {startDate && endDate && (
+            <p className="text-xs text-muted-foreground mt-1">
+              기간: {startDate.toLocaleDateString('ko-KR')} ~ {endDate.toLocaleDateString('ko-KR')}
+            </p>
+          )}
         </div>
         <Button variant="ghost" size="icon" onClick={nextMonth}>
           <ChevronRight className="w-5 h-5" />
@@ -131,13 +149,15 @@ export function MealCalendar() {
           const targetCost = currentMealPlanInfo ? targetCosts[currentMealPlanInfo.price] * 1.03 : 0
           const isOverBudget = composition && composition.totalCost > targetCost
           
+          const inRange = day ? isInRange(day) : false
+          
           return (
             <div
               key={idx}
               className={`min-h-36 p-1.5 border-r border-b border-border last:border-r-0 
-                ${!day ? 'bg-secondary/20' : 'hover:bg-secondary/30 cursor-pointer'}
-                ${isWeekend ? 'bg-secondary/10' : ''}`}
-              onClick={() => day && setSelectedDate(dateStr)}
+                ${!day ? 'bg-secondary/20' : inRange ? 'hover:bg-secondary/30 cursor-pointer' : 'bg-secondary/10 opacity-50'}
+                ${isWeekend && inRange ? 'bg-secondary/10' : ''}`}
+              onClick={() => day && inRange && setSelectedDate(dateStr)}
             >
               {day && (
                 <>
@@ -146,7 +166,7 @@ export function MealCalendar() {
                   }`}>
                     {day}
                   </div>
-                  {composition && (
+                  {inRange && composition && (
                     <div className="space-y-0.5">
                       {/* FF */}
                       {composition.ff && (
