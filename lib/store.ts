@@ -164,10 +164,11 @@ export const useMealboxStore = create<MealboxStore>()(
             const ffIndex = dayIndex % ffProducts.length
             const ff = ffProducts[ffIndex]
             
-            // 김밥 식단: 원가 상한 = 목표원가 + 50원
-            const targetCost3 = targetCosts[3500] + 50
-            const targetCost4 = targetCosts[4500] + 50
-            const targetCost5 = targetCosts[5500] + 50
+            // 김밥 식단: 평균원가가 목표원가 + 50원이 되도록 상한을 더 높게 설정
+            // 평균이 목표+50이 되려면 상한은 더 여유있게 (목표+100 정도)
+            const targetCost3 = targetCosts[3500] + 100
+            const targetCost4 = targetCosts[4500] + 100
+            const targetCost5 = targetCosts[5500] + 100
             
             // 김밥3: FF + 음료
             let remainingBudget3 = targetCost3 - ff.cost
@@ -366,15 +367,18 @@ export const useMealboxStore = create<MealboxStore>()(
           }
         }
         
-        // 삼각(주먹밥) 식단 생성: 삼각3 = FF + 음료 + 디저트1, 삼각4 = 삼각3 + 디저트2
+        // 삼각(주먹밥) 식단 생성
+        // 삼각3: FF + 음료(김밥3과 동일) + 디저트1
+        // 삼각4: 삼각3 + 김밥5의 디저트2 (총 4개 구성)
         const samgakProducts = products.filter(p => p.category === 'ff' && p.ffType === '주먹밥')
-        if (samgakProducts.length > 0) {
+        const gimbap3Meals = mealPlanMeals['김밥3.5']
+        const gimbap5Meals = mealPlanMeals['김밥5.5']
+        
+        if (samgakProducts.length > 0 && gimbap3Meals && gimbap5Meals) {
           const meals3: DailyMeal[] = []
           const meals4: DailyMeal[] = []
           
-          const usedDrinkIds = new Set<string>()
           const usedDessert1Ids = new Set<string>()
-          const usedDessert2Ids = new Set<string>()
           
           for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
             const currentDate = dates[dayIndex]
@@ -387,40 +391,21 @@ export const useMealboxStore = create<MealboxStore>()(
             const ffIndex = dayIndex % samgakProducts.length
             const ff = samgakProducts[ffIndex]
             
-            const targetCost3 = targetCosts[3500] * 1.03
-            const targetCost4 = targetCosts[4500] * 1.03
+            // 삼각3의 음료는 김밥3의 음료와 동일
+            const gimbap3Comp = gimbap3Meals[dayIndex]?.compositions[3500]
+            const drink = gimbap3Comp?.drink
             
-            let remainingBudget3 = targetCost3 - ff.cost
+            // 김밥5의 디저트2 가져오기 (삼각4에서 사용)
+            const gimbap5Comp = gimbap5Meals[dayIndex]?.compositions[5500]
+            const gimbap5Dessert2 = gimbap5Comp?.desserts?.[1] // 디저트2는 두번째
+            
             const usedTodayIds = new Set<string>()
+            if (drink) usedTodayIds.add(drink.id)
             
-            // 음료 선택
-            const drinkGroup = DRINK_GROUP_BY_DAY[dayOfWeek]
-            let availableDrinks = drinkProducts.filter(d => 
-              d.group === drinkGroup && 
-              d.cost <= remainingBudget3
-            )
+            // 디저트1 선택 (삼각3용)
+            const targetCost3 = targetCosts[3500] * 1.03
+            let remainingBudget3 = targetCost3 - ff.cost - (drink?.cost || 0)
             
-            if (availableDrinks.length === 0) {
-              availableDrinks = drinkProducts
-                .filter(d => d.group === drinkGroup)
-                .sort((a, b) => a.cost - b.cost)
-                .slice(0, 3)
-            }
-            
-            let unusedDrinks = availableDrinks.filter(d => !usedDrinkIds.has(d.id))
-            if (unusedDrinks.length === 0) {
-              usedDrinkIds.clear()
-              unusedDrinks = availableDrinks
-            }
-            
-            const drink = unusedDrinks[Math.floor(Math.random() * Math.min(3, unusedDrinks.length))] || availableDrinks[0]
-            if (drink) {
-              usedDrinkIds.add(drink.id)
-              usedTodayIds.add(drink.id)
-              remainingBudget3 -= drink.cost
-            }
-            
-            // 디저트1 선택
             const dessert1Group = DESSERT1_GROUP_BY_DAY[dayOfWeek]
             let availableDesserts1 = dessertProducts.filter(d => 
               d.group === dessert1Group && 
@@ -447,7 +432,7 @@ export const useMealboxStore = create<MealboxStore>()(
               usedTodayIds.add(dessert1.id)
             }
             
-            // 삼각3 저장
+            // 삼각3 저장: FF + 음료 + 디저트1
             const desserts3 = dessert1 ? [dessert1] : []
             const totalCost3 = ff.cost + (drink?.cost || 0) + desserts3.reduce((sum, d) => sum + d.cost, 0)
             meals3.push({
@@ -457,49 +442,10 @@ export const useMealboxStore = create<MealboxStore>()(
               }
             })
             
-            // 삼각4: 삼각3 + 디저트2
-            let remainingBudget4 = targetCost4 - totalCost3
-            
-            const dessert2Groups = DESSERT2_GROUPS_BY_DAY[dayOfWeek]
-            let availableDesserts2: Product[] = []
-            
-            for (const group of dessert2Groups) {
-              const groupDesserts = dessertProducts.filter(d => 
-                d.group === group && 
-                !usedTodayIds.has(d.id) &&
-                d.cost <= remainingBudget4
-              )
-              if (groupDesserts.length > 0) {
-                availableDesserts2 = groupDesserts
-                break
-              }
-            }
-            
-            if (availableDesserts2.length === 0) {
-              for (const group of dessert2Groups) {
-                const groupDesserts = dessertProducts
-                  .filter(d => d.group === group && !usedTodayIds.has(d.id))
-                  .sort((a, b) => a.cost - b.cost)
-                if (groupDesserts.length > 0) {
-                  availableDesserts2 = groupDesserts.slice(0, 3)
-                  break
-                }
-              }
-            }
-            
-            let unusedDesserts2 = availableDesserts2.filter(d => !usedDessert2Ids.has(d.id))
-            if (unusedDesserts2.length === 0) {
-              usedDessert2Ids.clear()
-              unusedDesserts2 = availableDesserts2
-            }
-            
-            const dessert2 = unusedDesserts2[Math.floor(Math.random() * Math.min(3, unusedDesserts2.length))] || availableDesserts2[0]
-            
-            // 삼각4 저장
+            // 삼각4: 삼각3 + 김밥5의 디저트2 (총 4개 구성: FF + 음료 + 디저트1 + 디저트2)
             const desserts4 = [...desserts3]
-            if (dessert2) {
-              desserts4.push(dessert2)
-              usedDessert2Ids.add(dessert2.id)
+            if (gimbap5Dessert2) {
+              desserts4.push(gimbap5Dessert2)
             }
             const totalCost4 = ff.cost + (drink?.cost || 0) + desserts4.reduce((sum, d) => sum + d.cost, 0)
             meals4.push({
