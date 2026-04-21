@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
-@custom-variant dark (&:is(.dark *));
+/* 라이트 모드만 사용 - 다크 모드 비활성화 */
 
 :root {
   --background: oklch(0.98 0 0);
