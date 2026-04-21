@@ -14,15 +14,19 @@ import {
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
-// 디저트 그룹별 색상 매핑
+// 디저트 그룹별 색상 매핑 (흰색 배경용)
 const DESSERT_GROUP_COLORS: { [key: string]: { bg: string; text: string; border: string } } = {
-  '프레시': { bg: 'bg-green-500/20', text: 'text-green-400', border: 'border-green-500/30' },
-  '탄수화물': { bg: 'bg-amber-500/20', text: 'text-amber-400', border: 'border-amber-500/30' },
-  '단백질': { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
-  '당류': { bg: 'bg-pink-500/20', text: 'text-pink-400', border: 'border-pink-500/30' },
+  '프레시': { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-300' },
+  '탄수화물': { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-300' },
+  '단백질': { bg: 'bg-sky-100', text: 'text-sky-700', border: 'border-sky-300' },
+  '당류': { bg: 'bg-pink-100', text: 'text-pink-700', border: 'border-pink-300' },
 }
 
-const getDefaultDessertColor = () => ({ bg: 'bg-dessert/20', text: 'text-dessert', border: 'border-dessert/30' })
+// FF와 음료는 디저트 그룹과 구분되는 색상 사용
+const FF_COLOR = { bg: 'bg-violet-100', text: 'text-violet-700', border: 'border-violet-300' }
+const DRINK_COLOR = { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-300' }
+
+const getDefaultDessertColor = () => ({ bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300' })
 
 export function MealCalendar() {
   const { 
@@ -263,13 +267,13 @@ export function MealCalendar() {
                     <div className="space-y-0.5">
                       {/* FF */}
                       {composition.ff && (
-                        <div className="text-[9px] leading-tight px-0.5 py-px rounded bg-ff/20 text-ff truncate">
+                        <div className={`text-[9px] leading-tight px-0.5 py-px rounded truncate ${FF_COLOR.bg} ${FF_COLOR.text}`}>
                           {composition.ff.name}
                         </div>
                       )}
                       {/* 음료 */}
                       {composition.drink && (
-                        <div className="text-[9px] leading-tight px-0.5 py-px rounded bg-primary/20 text-primary truncate">
+                        <div className={`text-[9px] leading-tight px-0.5 py-px rounded truncate ${DRINK_COLOR.bg} ${DRINK_COLOR.text}`}>
                           {composition.drink.name}
                         </div>
                       )}
@@ -331,7 +335,18 @@ export function MealCalendar() {
           
           {/* 범례 */}
           <div className="mt-4 pt-3 border-t border-border">
-            <h4 className="text-xs font-medium text-foreground mb-2">디저트 그룹</h4>
+            <h4 className="text-xs font-medium text-foreground mb-2">구성품 색상</h4>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-[10px]">
+                <div className={`w-3 h-3 rounded ${FF_COLOR.bg} ${FF_COLOR.border} border`} />
+                <span className={FF_COLOR.text}>FF</span>
+              </div>
+              <div className="flex items-center gap-2 text-[10px]">
+                <div className={`w-3 h-3 rounded ${DRINK_COLOR.bg} ${DRINK_COLOR.border} border`} />
+                <span className={DRINK_COLOR.text}>음료</span>
+              </div>
+            </div>
+            <h4 className="text-xs font-medium text-foreground mb-2 mt-3">디저트 그룹</h4>
             <div className="space-y-1">
               {Object.entries(DESSERT_GROUP_COLORS).map(([group, colors]) => (
                 <div key={group} className="flex items-center gap-2 text-[10px]">
@@ -461,15 +476,15 @@ function MealDetail({ price, composition, targetCost }: MealDetailProps) {
       {composition ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {composition.ff && (
-            <div className="p-2 bg-ff/10 rounded border border-ff/20">
-              <div className="text-xs text-ff mb-1">FF ({composition.ff.ffType})</div>
+            <div className={`p-2 rounded border ${FF_COLOR.bg} ${FF_COLOR.border}`}>
+              <div className={`text-xs mb-1 ${FF_COLOR.text}`}>FF ({composition.ff.ffType})</div>
               <div className="text-sm font-medium text-foreground">{composition.ff.name}</div>
               <div className="text-xs text-muted-foreground">{composition.ff.cost.toLocaleString()}원</div>
             </div>
           )}
           {composition.drink && (
-            <div className="p-2 bg-primary/10 rounded border border-primary/20">
-              <div className="text-xs text-primary mb-1">음료 ({composition.drink.group || '-'})</div>
+            <div className={`p-2 rounded border ${DRINK_COLOR.bg} ${DRINK_COLOR.border}`}>
+              <div className={`text-xs mb-1 ${DRINK_COLOR.text}`}>음료 ({composition.drink.group || '-'})</div>
               <div className="text-sm font-medium text-foreground">{composition.drink.name}</div>
               <div className="text-xs text-muted-foreground">{composition.drink.cost.toLocaleString()}원</div>
             </div>
