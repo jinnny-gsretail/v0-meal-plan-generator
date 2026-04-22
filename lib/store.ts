@@ -164,30 +164,33 @@ export const useMealboxStore = create<MealboxStore>()(
             const ffIndex = dayIndex % ffProducts.length
             const ff = ffProducts[ffIndex]
             
-            // 김밥 식단: 평균원가가 목표원가 + 50원이 되도록 상한을 더 높게 설정
-            // 평균이 목표+50이 되려면 상한은 더 여유있게 (목표+100 정도)
-            const targetCost3 = targetCosts[3500] + 100
-            const targetCost4 = targetCosts[4500] + 100
-            const targetCost5 = targetCosts[5500] + 100
+            // 김밥 식단: 평균원가가 목표원가 + 50원이 되도록 설정
+            // 목표원가 + 50원을 기준으로 그 근처의 상품을 선택
+            const targetAvg3 = targetCosts[3500] + 50
+            const targetAvg4 = targetCosts[4500] + 50
+            const targetAvg5 = targetCosts[5500] + 50
             
             // 김밥3: FF + 음료
-            let remainingBudget3 = targetCost3 - ff.cost
+            // 목표 음료 원가 = 목표 평균원가 - FF 원가
+            const targetDrinkCost = targetAvg3 - ff.cost
             const usedTodayIds = new Set<string>()
             
-            // 음료 선택
+            // 음료 선택 - 목표 원가에 가까운 음료 선택 (비싼 것 우선)
             const drinkGroup = DRINK_GROUP_BY_DAY[dayOfWeek]
             let availableDrinks = drinkProducts.filter(d => 
               d.group === drinkGroup && 
-              !usedTodayIds.has(d.id) &&
-              d.cost <= remainingBudget3
+              !usedTodayIds.has(d.id)
             )
             
-            if (availableDrinks.length === 0) {
-              availableDrinks = drinkProducts
-                .filter(d => d.group === drinkGroup && !usedTodayIds.has(d.id))
-                .sort((a, b) => a.cost - b.cost)
-                .slice(0, 3)
-            }
+            // 목표 원가에 가까운 순으로 정렬 (목표보다 비싼 것 우선, 그 다음 목표에 가까운 것)
+            availableDrinks.sort((a, b) => {
+              const diffA = a.cost - targetDrinkCost
+              const diffB = b.cost - targetDrinkCost
+              // 목표 이상인 것을 우선, 그 다음 목표에 가까운 것
+              if (diffA >= 0 && diffB < 0) return -1
+              if (diffA < 0 && diffB >= 0) return 1
+              return Math.abs(diffA) - Math.abs(diffB)
+            })
             
             let unusedDrinks = availableDrinks.filter(d => !usedDrinkIds.has(d.id))
             if (unusedDrinks.length === 0) {
@@ -195,7 +198,7 @@ export const useMealboxStore = create<MealboxStore>()(
               unusedDrinks = availableDrinks
             }
             
-            unusedDrinks.sort((a, b) => a.cost - b.cost)
+            // 상위 3개 중 랜덤 선택 (목표에 가까운 것들)
             const drink = unusedDrinks.length > 0 
               ? unusedDrinks[Math.floor(Math.random() * Math.min(3, unusedDrinks.length))]
               : availableDrinks[0]
@@ -215,21 +218,23 @@ export const useMealboxStore = create<MealboxStore>()(
             })
             
             // 김밥4: 김밥3 + 디저트1
-            let remainingBudget4 = targetCost4 - ff.cost - (drink?.cost || 0)
+            // 목표 디저트1 원가 = 김밥4 목표 평균원가 - 김밥3 원가
+            const targetDessert1Cost = targetAvg4 - totalCost3
             
             const dessert1Group = DESSERT1_GROUP_BY_DAY[dayOfWeek]
             let availableDesserts1 = dessertProducts.filter(d => 
               d.group === dessert1Group && 
-              !usedTodayIds.has(d.id) &&
-              d.cost <= remainingBudget4
+              !usedTodayIds.has(d.id)
             )
             
-            if (availableDesserts1.length === 0) {
-              availableDesserts1 = dessertProducts
-                .filter(d => d.group === dessert1Group && !usedTodayIds.has(d.id))
-                .sort((a, b) => a.cost - b.cost)
-                .slice(0, 3)
-            }
+            // 목표 원가에 가까운 순으로 정렬 (목표보다 비싼 것 우선)
+            availableDesserts1.sort((a, b) => {
+              const diffA = a.cost - targetDessert1Cost
+              const diffB = b.cost - targetDessert1Cost
+              if (diffA >= 0 && diffB < 0) return -1
+              if (diffA < 0 && diffB >= 0) return 1
+              return Math.abs(diffA) - Math.abs(diffB)
+            })
             
             let unusedDesserts1 = availableDesserts1.filter(d => !usedDessert1Ids.has(d.id))
             if (unusedDesserts1.length === 0) {
@@ -237,7 +242,6 @@ export const useMealboxStore = create<MealboxStore>()(
               unusedDesserts1 = availableDesserts1
             }
             
-            unusedDesserts1.sort((a, b) => a.cost - b.cost)
             const dessert1 = unusedDesserts1.length > 0
               ? unusedDesserts1[Math.floor(Math.random() * Math.min(3, unusedDesserts1.length))]
               : availableDesserts1[0]
@@ -258,34 +262,29 @@ export const useMealboxStore = create<MealboxStore>()(
             })
             
             // 김밥5: 김밥4 + 디저트2
-            let remainingBudget5 = targetCost5 - totalCost4
+            // 목표 디저트2 원가 = 김밥5 목표 평균원가 - 김밥4 원가
+            const targetDessert2Cost = targetAvg5 - totalCost4
             
             const dessert2Groups = DESSERT2_GROUPS_BY_DAY[dayOfWeek]
             let availableDesserts2: Product[] = []
             
+            // 모든 가능한 그룹에서 디저트 수집
             for (const group of dessert2Groups) {
               const groupDesserts = dessertProducts.filter(d => 
                 d.group === group && 
-                !usedTodayIds.has(d.id) &&
-                d.cost <= remainingBudget5
+                !usedTodayIds.has(d.id)
               )
-              if (groupDesserts.length > 0) {
-                availableDesserts2 = groupDesserts
-                break
-              }
+              availableDesserts2.push(...groupDesserts)
             }
             
-            if (availableDesserts2.length === 0) {
-              for (const group of dessert2Groups) {
-                const groupDesserts = dessertProducts
-                  .filter(d => d.group === group && !usedTodayIds.has(d.id))
-                  .sort((a, b) => a.cost - b.cost)
-                if (groupDesserts.length > 0) {
-                  availableDesserts2 = groupDesserts.slice(0, 3)
-                  break
-                }
-              }
-            }
+            // 목표 원가에 가까운 순으로 정렬 (목표보다 비싼 것 우선)
+            availableDesserts2.sort((a, b) => {
+              const diffA = a.cost - targetDessert2Cost
+              const diffB = b.cost - targetDessert2Cost
+              if (diffA >= 0 && diffB < 0) return -1
+              if (diffA < 0 && diffB >= 0) return 1
+              return Math.abs(diffA) - Math.abs(diffB)
+            })
             
             let unusedDesserts2 = availableDesserts2.filter(d => !usedDessert2Ids.has(d.id))
             if (unusedDesserts2.length === 0) {
@@ -293,7 +292,6 @@ export const useMealboxStore = create<MealboxStore>()(
               unusedDesserts2 = availableDesserts2
             }
             
-            unusedDesserts2.sort((a, b) => a.cost - b.cost)
             const dessert2 = unusedDesserts2.length > 0
               ? unusedDesserts2[Math.floor(Math.random() * Math.min(3, unusedDesserts2.length))]
               : availableDesserts2[0]
