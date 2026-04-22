@@ -57,7 +57,7 @@ export const useMealboxStore = create<MealboxStore>()(
       targetCosts: {
         3500: 1486,
         4500: 1964,
-        5500: 1964,
+        5500: 2430,
         6500: 3191,
       },
       selectedMonth: new Date(),
