@@ -214,7 +214,9 @@ export const useMealboxStore = create<MealboxStore>()(
             // 목표 음료 원가 = 김밥3 목표원가 - FF원가
             const targetDrinkCost3 = target3 - ff.cost
             const drinkGroup = DRINK_GROUP_BY_DAY[dayOfWeek]
-            const availableDrinks = drinkProducts.filter(d => d.group === drinkGroup)
+            let availableDrinks = drinkProducts.filter(d => d.group === drinkGroup)
+            // 해당 그룹 음료가 없으면 전체 음료에서 선택
+            if (availableDrinks.length === 0) availableDrinks = drinkProducts
             
             const drink = selectProductByTargetCost(availableDrinks, targetDrinkCost3, usedDrinkIds, usedTodayIds)
             if (drink) {
@@ -232,7 +234,9 @@ export const useMealboxStore = create<MealboxStore>()(
             // 목표 디저트1 원가 = 김밥4 목표원가 - 김밥3 원가
             const targetDessert1Cost = target4 - totalCost3
             const dessert1Group = DESSERT1_GROUP_BY_DAY[dayOfWeek]
-            const availableDesserts1 = dessertProducts.filter(d => d.group === dessert1Group)
+            let availableDesserts1 = dessertProducts.filter(d => d.group === dessert1Group)
+            // 해당 그룹 디저트가 없으면 전체 디저트에서 선택
+            if (availableDesserts1.length === 0) availableDesserts1 = dessertProducts
             
             const dessert1 = selectProductByTargetCost(availableDesserts1, targetDessert1Cost, usedDessert1Ids, usedTodayIds)
             if (dessert1) {
@@ -254,6 +258,10 @@ export const useMealboxStore = create<MealboxStore>()(
             let availableDesserts2: Product[] = []
             for (const group of dessert2Groups) {
               availableDesserts2.push(...dessertProducts.filter(d => d.group === group && !usedTodayIds.has(d.id)))
+            }
+            // 해당 그룹 디저트가 없으면 전체 디저트에서 선택 (오늘 사용 안한 것)
+            if (availableDesserts2.length === 0) {
+              availableDesserts2 = dessertProducts.filter(d => !usedTodayIds.has(d.id))
             }
             
             const dessert2 = selectProductByTargetCost(availableDesserts2, targetDessert2Cost, usedDessert2Ids, usedTodayIds)
@@ -374,9 +382,10 @@ export const useMealboxStore = create<MealboxStore>()(
             // 디저트1 선택 (목표 원가에 맞게)
             const targetDessert1Cost = target3 - ff.cost - (drink?.cost || 0)
             const dessert1Group = DESSERT1_GROUP_BY_DAY[dayOfWeek]
-            const availableDesserts1 = dessertProducts.filter(d => d.group === dessert1Group)
+            let availableDesserts1Samgak = dessertProducts.filter(d => d.group === dessert1Group)
+            if (availableDesserts1Samgak.length === 0) availableDesserts1Samgak = dessertProducts
             
-            const dessert1 = selectProductByTargetCost(availableDesserts1, targetDessert1Cost, usedDessert1Ids, usedTodayIds)
+            const dessert1 = selectProductByTargetCost(availableDesserts1Samgak, targetDessert1Cost, usedDessert1Ids, usedTodayIds)
             if (dessert1) {
               usedDessert1Ids.add(dessert1.id)
               usedTodayIds.add(dessert1.id)
@@ -432,9 +441,10 @@ export const useMealboxStore = create<MealboxStore>()(
             
             // 버거는 탄산 음료만
             const targetDrinkCost = target3 - ff.cost
-            const availableDrinks = drinkProducts.filter(d => d.group === '탄산')
+            let availableDrinksBurger = drinkProducts.filter(d => d.group === '탄산')
+            if (availableDrinksBurger.length === 0) availableDrinksBurger = drinkProducts
             
-            const drink = selectProductByTargetCost(availableDrinks, targetDrinkCost, usedDrinkIds, usedTodayIds)
+            const drink = selectProductByTargetCost(availableDrinksBurger, targetDrinkCost, usedDrinkIds, usedTodayIds)
             if (drink) {
               usedDrinkIds.add(drink.id)
               usedTodayIds.add(drink.id)
@@ -447,11 +457,12 @@ export const useMealboxStore = create<MealboxStore>()(
             })
             
             // 버거4: 버거3 + 디저트1
-            const targetDessert1Cost = target4 - totalCost3
-            const dessert1Group = DESSERT1_GROUP_BY_DAY[dayOfWeek]
-            const availableDesserts1 = dessertProducts.filter(d => d.group === dessert1Group)
+            const targetDessert1CostBurger = target4 - totalCost3
+            const dessert1GroupBurger = DESSERT1_GROUP_BY_DAY[dayOfWeek]
+            let availableDesserts1Burger = dessertProducts.filter(d => d.group === dessert1GroupBurger)
+            if (availableDesserts1Burger.length === 0) availableDesserts1Burger = dessertProducts
             
-            const dessert1 = selectProductByTargetCost(availableDesserts1, targetDessert1Cost, usedDessert1Ids, usedTodayIds)
+            const dessert1 = selectProductByTargetCost(availableDesserts1Burger, targetDessert1CostBurger, usedDessert1Ids, usedTodayIds)
             if (dessert1) {
               usedDessert1Ids.add(dessert1.id)
               usedTodayIds.add(dessert1.id)
@@ -465,14 +476,17 @@ export const useMealboxStore = create<MealboxStore>()(
             })
             
             // 버거5: 버거4 + 디저트2
-            const targetDessert2Cost = target5 - totalCost4
-            const dessert2Groups = DESSERT2_GROUPS_BY_DAY[dayOfWeek]
-            let availableDesserts2: Product[] = []
-            for (const group of dessert2Groups) {
-              availableDesserts2.push(...dessertProducts.filter(d => d.group === group && !usedTodayIds.has(d.id)))
+            const targetDessert2CostBurger = target5 - totalCost4
+            const dessert2GroupsBurger = DESSERT2_GROUPS_BY_DAY[dayOfWeek]
+            let availableDesserts2Burger: Product[] = []
+            for (const group of dessert2GroupsBurger) {
+              availableDesserts2Burger.push(...dessertProducts.filter(d => d.group === group && !usedTodayIds.has(d.id)))
+            }
+            if (availableDesserts2Burger.length === 0) {
+              availableDesserts2Burger = dessertProducts.filter(d => !usedTodayIds.has(d.id))
             }
             
-            const dessert2 = selectProductByTargetCost(availableDesserts2, targetDessert2Cost, usedDessert2Ids, usedTodayIds)
+            const dessert2 = selectProductByTargetCost(availableDesserts2Burger, targetDessert2CostBurger, usedDessert2Ids, usedTodayIds)
             if (dessert2) {
               usedDessert2Ids.add(dessert2.id)
             }
@@ -518,11 +532,12 @@ export const useMealboxStore = create<MealboxStore>()(
             const usedTodayIds = new Set<string>()
             
             // 도시락4.5: 도시락 + 음료
-            const targetDrinkCost = target45 - ff.cost
-            const drinkGroup = DRINK_GROUP_BY_DAY[dayOfWeek]
-            const availableDrinks = drinkProducts.filter(d => d.group === drinkGroup)
+            const targetDrinkCostDosirak = target45 - ff.cost
+            const drinkGroupDosirak = DRINK_GROUP_BY_DAY[dayOfWeek]
+            let availableDrinksDosirak = drinkProducts.filter(d => d.group === drinkGroupDosirak)
+            if (availableDrinksDosirak.length === 0) availableDrinksDosirak = drinkProducts
             
-            const drink = selectProductByTargetCost(availableDrinks, targetDrinkCost, usedDrinkIds, usedTodayIds)
+            const drink = selectProductByTargetCost(availableDrinksDosirak, targetDrinkCostDosirak, usedDrinkIds, usedTodayIds)
             if (drink) {
               usedDrinkIds.add(drink.id)
               usedTodayIds.add(drink.id)
@@ -536,10 +551,11 @@ export const useMealboxStore = create<MealboxStore>()(
             
             // 도시락5.5: 도시락4.5 + 디저트1
             const targetDessert1Cost55 = target55 - totalCost45
-            const dessert1Group = DESSERT1_GROUP_BY_DAY[dayOfWeek]
-            const availableDesserts1 = dessertProducts.filter(d => d.group === dessert1Group)
+            const dessert1GroupDosirak = DESSERT1_GROUP_BY_DAY[dayOfWeek]
+            let availableDesserts1Dosirak = dessertProducts.filter(d => d.group === dessert1GroupDosirak)
+            if (availableDesserts1Dosirak.length === 0) availableDesserts1Dosirak = dessertProducts
             
-            const dessert1_55 = selectProductByTargetCost(availableDesserts1, targetDessert1Cost55, usedDessert1Ids, usedTodayIds)
+            const dessert1_55 = selectProductByTargetCost(availableDesserts1Dosirak, targetDessert1Cost55, usedDessert1Ids, usedTodayIds)
             if (dessert1_55) {
               usedDessert1Ids.add(dessert1_55.id)
               usedTodayIds.add(dessert1_55.id)
@@ -555,7 +571,7 @@ export const useMealboxStore = create<MealboxStore>()(
             // 도시락6.5: 도시락 + 음료 + 디저트1 (5.5와 동일 구성, 더 비싼 상품)
             const targetDessert1Cost65 = target65 - totalCost45
             const dessert1_65 = selectProductByTargetCost(
-              availableDesserts1.filter(d => d.id !== dessert1_55?.id),
+              availableDesserts1Dosirak.filter(d => d.id !== dessert1_55?.id),
               targetDessert1Cost65,
               new Set<string>(),
               usedTodayIds
