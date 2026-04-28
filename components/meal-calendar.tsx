@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { ChevronLeft, ChevronRight, AlertCircle, Download } from 'lucide-react'
+import { ChevronLeft, ChevronRight, AlertCircle, Download, Pencil, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useMealboxStore } from '@/lib/store'
 import { MealComposition, ALL_MEAL_PLANS, Product } from '@/lib/types'
@@ -11,7 +11,11 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -38,9 +42,21 @@ export function MealCalendar() {
     mealPlanTargetCosts,
     selectedMealPlan,
     startDate: storedStartDate,
-    endDate: storedEndDate
+    endDate: storedEndDate,
+    products,
+    updateMealComponent
   } = useMealboxStore()
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
+  
+  // 구성품 수정 상태
+  const [editingComponent, setEditingComponent] = useState<{
+    date: string
+    mealPlanName: string
+    componentType: 'drink' | 'dessert'
+    componentIndex: number
+    currentProduct: Product | null
+  } | null>(null)
+  const [syncToRelated, setSyncToRelated] = useState(true)
   
   // Ensure dates are Date objects
   const startDate = storedStartDate instanceof Date ? storedStartDate : storedStartDate ? new Date(storedStartDate) : null
@@ -207,6 +223,81 @@ export function MealCalendar() {
   }
 
   const hasData = startDate && endDate && Object.keys(mealPlanMeals).length > 0
+
+  // 교체 가능한 상품 목록 (제약 조건 필터링)
+  const getAvailableProducts = useMemo(() => {
+    if (!editingComponent) return []
+    
+    const { date, componentType } = editingComponent
+    const d = new Date(date)
+    const dayOfWeek = d.getDay()
+    
+    // 요거트 허용: 월(1), 화(2)만
+    const isYogurtAllowed = dayOfWeek === 1 || dayOfWeek === 2
+    // 월요일 요거트 필수는 이미 음료에 요거트가 있으면 디저트에서 요거트 제외
+    const isMonday = dayOfWeek === 1
+    
+    // 해당 식단의 현재 구성 확인 (요거트 중복 방지)
+    const currentMealData = currentMealPlanData.find(m => m.date === date)
+    const currentComp = currentMealData?.compositions[currentMealPlanInfo?.price || 0]
+    const hasYogurtDrink = currentComp?.drink?.group === '요거트'
+    
+    let pool: Product[] = []
+    
+    if (componentType === 'drink') {
+      pool = products.filter(p => p.category === 'drink')
+      // 수~일: 요거트 제외
+      if (!isYogurtAllowed) {
+        pool = pool.filter(p => p.group !== '요거트')
+      }
+    } else {
+      pool = products.filter(p => p.category === 'dessert')
+      // 수~일: 요거트 제외
+      if (!isYogurtAllowed) {
+        pool = pool.filter(p => p.group !== '요거트')
+      }
+      // 월요일 + 음료가 요거트면 디저트에서 요거트 제외 (중복 금지)
+      if (isMonday && hasYogurtDrink) {
+        pool = pool.filter(p => p.group !== '요거트')
+      }
+    }
+    
+    // 원가순 정렬
+    return pool.sort((a, b) => a.cost - b.cost)
+  }, [editingComponent, products, currentMealPlanData, currentMealPlanInfo])
+
+  // 구성품 선택 핸들러
+  const handleSelectProduct = (product: Product) => {
+    if (!editingComponent || !selectedMealPlan) return
+    
+    updateMealComponent(
+      editingComponent.date,
+      editingComponent.mealPlanName,
+      editingComponent.componentType,
+      editingComponent.componentIndex,
+      product,
+      syncToRelated
+    )
+    
+    setEditingComponent(null)
+  }
+
+  // 구성품 수정 버튼 클릭
+  const handleEditComponent = (
+    date: string,
+    componentType: 'drink' | 'dessert',
+    componentIndex: number,
+    currentProduct: Product | null
+  ) => {
+    if (!selectedMealPlan) return
+    setEditingComponent({
+      date,
+      mealPlanName: selectedMealPlan,
+      componentType,
+      componentIndex,
+      currentProduct
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -448,15 +539,90 @@ export function MealCalendar() {
                 weekday: 'long'
               })} - {selectedMealPlan}
             </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-xs">
+              구성품 위에 마우스를 올리면 수정 버튼이 나타납니다
+            </DialogDescription>
           </DialogHeader>
           
-          {selectedMeal && currentMealPlanInfo && (
+          {selectedMeal && currentMealPlanInfo && selectedDate && (
             <MealDetail
               price={currentMealPlanInfo.price}
               composition={selectedMeal.compositions[currentMealPlanInfo.price]}
               targetCost={targetCosts[currentMealPlanInfo.price]}
+              date={selectedDate}
+              onEditComponent={(componentType, componentIndex, currentProduct) => {
+                handleEditComponent(selectedDate, componentType, componentIndex, currentProduct)
+              }}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* 구성품 교체 다이얼로그 */}
+      <Dialog open={!!editingComponent} onOpenChange={() => setEditingComponent(null)}>
+        <DialogContent className="max-w-lg bg-card">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">
+              {editingComponent?.componentType === 'drink' ? '음료' : `디저트${(editingComponent?.componentIndex ?? 0) + 1}`} 교체
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground text-sm">
+              현재: {editingComponent?.currentProduct?.name || '없음'} ({editingComponent?.currentProduct?.cost?.toLocaleString() || 0}원)
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* 연동 수정 옵션 */}
+          <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-secondary/50">
+            <Checkbox 
+              id="sync-related" 
+              checked={syncToRelated} 
+              onCheckedChange={(checked) => setSyncToRelated(!!checked)} 
+            />
+            <Label htmlFor="sync-related" className="text-sm text-foreground cursor-pointer">
+              이 변경사항을 모든 가격대 및 삼각김밥 식단에 적용
+            </Label>
+          </div>
+
+          {/* 제약 조건 안내 */}
+          {editingComponent && (
+            <div className="text-xs text-muted-foreground px-1">
+              {new Date(editingComponent.date).getDay() >= 3 || new Date(editingComponent.date).getDay() === 0 ? (
+                <span className="text-amber-600">수~일요일: 요거트 상품 제외됨</span>
+              ) : new Date(editingComponent.date).getDay() === 1 ? (
+                <span className="text-primary">월요일: 요거트 필수 (음료에 요거트 배정)</span>
+              ) : null}
+            </div>
+          )}
+
+          {/* 상품 목록 */}
+          <ScrollArea className="h-64 rounded border border-border">
+            <div className="p-2 space-y-1">
+              {getAvailableProducts.map((product) => (
+                <button
+                  key={product.id}
+                  onClick={() => handleSelectProduct(product)}
+                  className={`w-full text-left p-2 rounded hover:bg-secondary transition-colors flex items-center justify-between ${
+                    editingComponent?.currentProduct?.id === product.id ? 'bg-primary/10 border border-primary/30' : ''
+                  }`}
+                >
+                  <div>
+                    <div className="text-sm font-medium text-foreground">{product.name}</div>
+                    <div className="text-xs text-muted-foreground">{product.group || '-'}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">{product.cost.toLocaleString()}원</span>
+                    {editingComponent?.currentProduct?.id === product.id && (
+                      <Check className="w-4 h-4 text-primary" />
+                    )}
+                  </div>
+                </button>
+              ))}
+              {getAvailableProducts.length === 0 && (
+                <div className="text-center py-4 text-muted-foreground text-sm">
+                  교체 가능한 상품이 없습니다
+                </div>
+              )}
+            </div>
+          </ScrollArea>
         </DialogContent>
       </Dialog>
     </div>
@@ -467,9 +633,11 @@ interface MealDetailProps {
   price: number
   composition: MealComposition | null
   targetCost: number
+  date: string
+  onEditComponent: (componentType: 'drink' | 'dessert', componentIndex: number, currentProduct: Product | null) => void
 }
 
-function MealDetail({ price, composition, targetCost }: MealDetailProps) {
+function MealDetail({ price, composition, targetCost, date, onEditComponent }: MealDetailProps) {
   const maxCost = targetCost * 1.03
   const isOverBudget = composition && composition.totalCost > maxCost
   
@@ -521,19 +689,31 @@ function MealDetail({ price, composition, targetCost }: MealDetailProps) {
             </div>
           )}
           {composition.drink && (
-            <div className={`p-2 rounded border ${DRINK_COLOR.bg} ${DRINK_COLOR.border}`}>
+            <div className={`p-2 rounded border ${DRINK_COLOR.bg} ${DRINK_COLOR.border} relative group`}>
               <div className={`text-xs mb-1 ${DRINK_COLOR.text}`}>음료 ({composition.drink.group || '-'})</div>
               <div className="text-sm font-medium text-foreground">{composition.drink.name}</div>
               <div className="text-xs text-muted-foreground">{composition.drink.cost.toLocaleString()}원</div>
+              <button
+                onClick={() => onEditComponent('drink', 0, composition.drink ?? null)}
+                className="absolute top-1 right-1 p-1 rounded bg-white/80 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Pencil className="w-3 h-3 text-muted-foreground" />
+              </button>
             </div>
           )}
           {composition.desserts.map((dessert, i) => {
             const colors = getDessertColors(dessert)
             return (
-              <div key={i} className={`p-2 rounded border ${colors.bg} ${colors.border}`}>
+              <div key={i} className={`p-2 rounded border ${colors.bg} ${colors.border} relative group`}>
                 <div className={`text-xs mb-1 ${colors.text}`}>디저트{i + 1} ({dessert.group || '-'})</div>
                 <div className="text-sm font-medium text-foreground">{dessert.name}</div>
                 <div className="text-xs text-muted-foreground">{dessert.cost.toLocaleString()}원</div>
+                <button
+                  onClick={() => onEditComponent('dessert', i, dessert)}
+                  className="absolute top-1 right-1 p-1 rounded bg-white/80 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Pencil className="w-3 h-3 text-muted-foreground" />
+                </button>
               </div>
             )
           })}

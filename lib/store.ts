@@ -48,6 +48,15 @@ interface MealboxStore {
   setEndDate: (date: Date | null) => void
   generateMeals: () => void
   updateMealComposition: (date: string, pricePoint: number, composition: MealComposition | null) => void
+  // 구성품 연동 수정: 김밥3→김밥4,5 및 삼각3,4로 전파
+  updateMealComponent: (
+    date: string,
+    mealPlanName: string,
+    componentType: 'drink' | 'dessert',
+    componentIndex: number, // dessert의 경우 0=B, 1=C
+    newProduct: Product,
+    syncToRelated: boolean
+  ) => void
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 9)
@@ -596,6 +605,92 @@ export const useMealboxStore = create<MealboxStore>()(
         }
         
         mealPlanMeals[selectedMealPlan] = meals
+        return { mealPlanMeals }
+      }),
+
+      // 구성품 연동 수정
+      updateMealComponent: (date, mealPlanName, componentType, componentIndex, newProduct, syncToRelated) => set((state) => {
+        const mealPlanMeals = { ...state.mealPlanMeals }
+        
+        // 연동 대상 정의
+        // 김밥3.5(A) → 김밥4.5/5.5(A), 삼각3.5/4.5(A)
+        // 김밥4.5(B) → 김밥5.5(B), 삼각3.5/4.5(B)
+        // 김밥5.5(C) → 삼각4.5(C)
+        const getSyncTargets = (srcPlan: string, cType: 'drink' | 'dessert', cIdx: number): { plan: string; type: 'drink' | 'dessert'; idx: number }[] => {
+          if (!syncToRelated) return []
+          
+          const targets: { plan: string; type: 'drink' | 'dessert'; idx: number }[] = []
+          
+          if (srcPlan === '김밥3.5' && cType === 'drink') {
+            // A(음료) 수정 → 김밥4.5/5.5의 A, 삼각3.5/4.5의 A, 샌드3.5/4.5/5.5의 A
+            targets.push({ plan: '김밥4.5', type: 'drink', idx: 0 })
+            targets.push({ plan: '김밥5.5', type: 'drink', idx: 0 })
+            targets.push({ plan: '삼각3.5', type: 'drink', idx: 0 })
+            targets.push({ plan: '삼각4.5', type: 'drink', idx: 0 })
+            targets.push({ plan: '샌드3.5', type: 'drink', idx: 0 })
+            targets.push({ plan: '샌드4.5', type: 'drink', idx: 0 })
+            targets.push({ plan: '샌드5.5', type: 'drink', idx: 0 })
+          } else if (srcPlan === '김밥4.5' && cType === 'dessert' && cIdx === 0) {
+            // B(디저트1) 수정 → 김밥5.5의 B, 삼각3.5/4.5의 B, 샌드4.5/5.5의 B
+            targets.push({ plan: '김밥5.5', type: 'dessert', idx: 0 })
+            targets.push({ plan: '삼각3.5', type: 'dessert', idx: 0 })
+            targets.push({ plan: '삼각4.5', type: 'dessert', idx: 0 })
+            targets.push({ plan: '샌드4.5', type: 'dessert', idx: 0 })
+            targets.push({ plan: '샌드5.5', type: 'dessert', idx: 0 })
+          } else if (srcPlan === '김밥5.5' && cType === 'dessert' && cIdx === 1) {
+            // C(디저트2) 수정 → 삼각4.5의 C, 샌드5.5의 C
+            targets.push({ plan: '삼각4.5', type: 'dessert', idx: 1 })
+            targets.push({ plan: '샌드5.5', type: 'dessert', idx: 1 })
+          }
+          
+          return targets
+        }
+        
+        // 단일 식단 구성품 업데이트 헬퍼
+        const updateSingleMeal = (planName: string, cType: 'drink' | 'dessert', cIdx: number) => {
+          const meals = mealPlanMeals[planName]
+          if (!meals) return
+          
+          const mealIdx = meals.findIndex(m => m.date === date)
+          if (mealIdx < 0) return
+          
+          const meal = meals[mealIdx]
+          const pricePoint = planName.includes('3.5') ? 3500 : planName.includes('4.5') ? 4500 : planName.includes('5.5') ? 5500 : 6500
+          const comp = meal.compositions[pricePoint]
+          if (!comp) return
+          
+          let newComp = { ...comp }
+          if (cType === 'drink') {
+            newComp.drink = newProduct
+          } else {
+            const newDesserts = [...(comp.desserts || [])]
+            if (cIdx < newDesserts.length) {
+              newDesserts[cIdx] = newProduct
+            }
+            newComp.desserts = newDesserts
+          }
+          
+          // 원가 재계산
+          newComp.totalCost = 
+            (newComp.ff?.cost || 0) + 
+            (newComp.drink?.cost || 0) + 
+            newComp.desserts.reduce((sum, d) => sum + d.cost, 0)
+          
+          meals[mealIdx] = {
+            ...meal,
+            compositions: { ...meal.compositions, [pricePoint]: newComp }
+          }
+        }
+        
+        // 원본 식단 업데이트
+        updateSingleMeal(mealPlanName, componentType, componentIndex)
+        
+        // 연동 대상 업데이트
+        const targets = getSyncTargets(mealPlanName, componentType, componentIndex)
+        targets.forEach(t => {
+          updateSingleMeal(t.plan, t.type, t.idx)
+        })
+        
         return { mealPlanMeals }
       }),
     }),
