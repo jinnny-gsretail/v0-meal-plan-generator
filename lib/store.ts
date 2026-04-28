@@ -5,9 +5,6 @@ import {
   DailyMeal, 
   MealComposition, 
   MealPlanName,
-  DRINK_GROUP_BY_DAY,
-  DESSERT1_GROUP_BY_DAY,
-  DESSERT2_GROUPS_BY_DAY,
   MEAL_PLAN_COST_CONFIGS
 } from './types'
 
@@ -126,470 +123,387 @@ export const useMealboxStore = create<MealboxStore>()(
       
       generateMeals: () => {
         const { products, mealPlanTargetCosts, startDate: storedStartDate, endDate: storedEndDate } = get()
-        
+
         const drinkProducts = products.filter(p => p.category === 'drink')
         const dessertProducts = products.filter(p => p.category === 'dessert')
-        
+
         const startDate = storedStartDate instanceof Date ? storedStartDate : storedStartDate ? new Date(storedStartDate) : new Date()
         const endDate = storedEndDate instanceof Date ? storedEndDate : storedEndDate ? new Date(storedEndDate) : new Date()
-        
+
         const dates: Date[] = []
-        const currentDate = new Date(startDate)
-        while (currentDate <= endDate) {
-          dates.push(new Date(currentDate))
-          currentDate.setDate(currentDate.getDate() + 1)
+        const cur = new Date(startDate)
+        while (cur <= endDate) {
+          dates.push(new Date(cur))
+          cur.setDate(cur.getDate() + 1)
         }
-        
         if (dates.length === 0) return
-        
+
         const mealPlanMeals: MealPlanDailyMeals = {}
-        
-        // 목표 원가 가져오기 (99%~101% 범위로 맞추기 위해 정확히 목표 원가 사용)
-        const getTargetCost = (mealPlanName: string) => {
-          return mealPlanTargetCosts[mealPlanName] || 
-            MEAL_PLAN_COST_CONFIGS.find(c => c.mealPlanName === mealPlanName)?.defaultCost || 1500
+
+        // 목표 원가
+        const getTarget = (name: string) =>
+          mealPlanTargetCosts[name] ??
+          MEAL_PLAN_COST_CONFIGS.find(c => c.mealPlanName === name)?.defaultCost ??
+          1500
+
+        // ── 음료 그룹 상수 ──
+        const ALL_DRINK_GROUPS = ['탄산', '건강', '주스', '차', '요거트']
+        const ALL_DESSERT_GROUPS = ['당류', '단백질', '탄수화물', '프레시', '컵라면', '요거트']
+
+        // 그룹에서 후보 추출 (없으면 전체 pool 반환)
+        const poolByGroups = (pool: Product[], groups: string[]): Product[] => {
+          const filtered = pool.filter(p => groups.includes(p.group ?? ''))
+          return filtered.length > 0 ? filtered : pool
         }
 
-        // 목표 원가에 정확히 맞는 상품 선택 함수
-        const selectProductByTargetCost = (
-          availableProducts: Product[],
+        // SKU 빈도 제한: 7일 내 최대 2회 사용 추적
+        const makeFreqTracker = () => {
+          // key: productId, value: 사용된 dayIndex 배열
+          const usage = new Map<string, number[]>()
+          return {
+            canUse: (id: string, dayIndex: number) => {
+              const used = usage.get(id) ?? []
+              // 7일 window 안에서 2회 미만이면 사용 가능
+              const window = used.filter(d => dayIndex - d < 7)
+              return window.length < 2
+            },
+            markUsed: (id: string, dayIndex: number) => {
+              const used = usage.get(id) ?? []
+              usage.set(id, [...used, dayIndex])
+            }
+          }
+        }
+
+        // 목표 원가에 가장 가까운 상품 선택
+        // freqTracker 기반 SKU 빈도 제한 적용, usedTodayIds 당일 중복 방지
+        const selectProduct = (
+          pool: Product[],
           targetCost: number,
-          usedIds: Set<string>,
+          freq: ReturnType<typeof makeFreqTracker>,
+          dayIndex: number,
           usedTodayIds: Set<string>
         ): Product | undefined => {
-          if (availableProducts.length === 0) return undefined
-          
-          // 오늘 사용 안한 상품 필터
-          let candidates = availableProducts.filter(p => !usedTodayIds.has(p.id))
-          if (candidates.length === 0) candidates = availableProducts
-          
-          // 아직 사용 안한 상품 우선
-          let unusedCandidates = candidates.filter(p => !usedIds.has(p.id))
-          if (unusedCandidates.length === 0) {
-            usedIds.clear()
-            unusedCandidates = candidates
+          if (pool.length === 0) return undefined
+
+          // 1순위: 당일 미사용 + 빈도 여유
+          let candidates = pool.filter(p => !usedTodayIds.has(p.id) && freq.canUse(p.id, dayIndex))
+          // 2순위: 빈도 여유만 (당일 중복 허용)
+          if (candidates.length === 0) candidates = pool.filter(p => freq.canUse(p.id, dayIndex))
+          // 3순위: 전체 (빈도 초과 포함)
+          if (candidates.length === 0) candidates = pool
+
+          // 목표 원가에 가장 가까운 순 정렬
+          candidates.sort((a, b) => Math.abs(a.cost - targetCost) - Math.abs(b.cost - targetCost))
+
+          // 상위 3개 중 랜덤 (다양성)
+          const top = candidates.slice(0, Math.min(3, candidates.length))
+          return top[Math.floor(Math.random() * top.length)]
+        }
+
+        // 음료 그룹 선택: 버거=탄산(75%)/주스(25%), 나머지=전날과 다른 그룹 랜덤
+        const pickDrinkGroup = (isBurger: boolean, prevGroup: string | null): string => {
+          if (isBurger) return Math.random() < 0.75 ? '탄산' : '주스'
+          const available = ALL_DRINK_GROUPS.filter(g => g !== prevGroup)
+          return available[Math.floor(Math.random() * available.length)]
+        }
+
+        // 디저트 그룹 선택: 음료 그룹과 중복 안되는 그룹에서 랜덤, 이미 선택된 그룹도 제외
+        const pickDessertGroup = (excludeGroups: string[]): string => {
+          const available = ALL_DESSERT_GROUPS.filter(g => !excludeGroups.includes(g))
+          if (available.length === 0) return ALL_DESSERT_GROUPS[Math.floor(Math.random() * ALL_DESSERT_GROUPS.length)]
+          return available[Math.floor(Math.random() * available.length)]
+        }
+
+        // 조합 고유성 체크: 7일 내 동일 A+B+C 반복 금지
+        const makeCombinationTracker = () => {
+          const used = new Set<string>()
+          return {
+            isUnique: (ids: string[]) => {
+              const key = [...ids].sort().join('|')
+              return !used.has(key)
+            },
+            mark: (ids: string[]) => {
+              const key = [...ids].sort().join('|')
+              used.add(key)
+            }
           }
-          
-          // 목표 원가에 가장 가까운 상품들 정렬
-          unusedCandidates.sort((a, b) => {
-            const diffA = Math.abs(a.cost - targetCost)
-            const diffB = Math.abs(b.cost - targetCost)
-            return diffA - diffB
-          })
-          
-          // 상위 3개 중 랜덤 선택 (다양성 유지)
-          const topCandidates = unusedCandidates.slice(0, Math.min(3, unusedCandidates.length))
-          return topCandidates[Math.floor(Math.random() * topCandidates.length)]
+        }
+
+        // ─────────────────────────────────────────────────────
+        // 공통 식단 생성 함수: 김밥/샌드/버거
+        // tiers: [{pricePoint, mealPlanName, dessertCount}]
+        // ─────────────────────────────────────────────────────
+        const buildStandardMeals = (
+          ffList: Product[],
+          tiers: { pricePoint: number; mealPlanName: string; dessertCount: number }[],
+          isBurger: boolean
+        ): { [mealPlanName: string]: DailyMeal[] } => {
+          const result: { [k: string]: DailyMeal[] } = {}
+          tiers.forEach(t => { result[t.mealPlanName] = [] })
+
+          const drinkFreq = makeFreqTracker()
+          const dessertFreqs = [makeFreqTracker(), makeFreqTracker()] // B, C
+          const combinationTracker = makeCombinationTracker()
+
+          let prevDrinkGroup: string | null = null
+
+          for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
+            const d = dates[dayIndex]
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            const ff = ffList[dayIndex % ffList.length]
+            const usedTodayIds = new Set<string>([ff.id])
+
+            // 음료 선택
+            const drinkGroup = pickDrinkGroup(isBurger, prevDrinkGroup)
+            prevDrinkGroup = drinkGroup
+            const drinkPool = poolByGroups(drinkProducts, [drinkGroup])
+            const targetDrink = getTarget(tiers[0].mealPlanName) - ff.cost
+            const drink = selectProduct(drinkPool, targetDrink, drinkFreq, dayIndex, usedTodayIds)
+            if (drink) { drinkFreq.markUsed(drink.id, dayIndex); usedTodayIds.add(drink.id) }
+
+            // 디저트 선택 (최대 2개)
+            const maxDesserts = Math.max(...tiers.map(t => t.dessertCount))
+            const selectedDesserts: Product[] = []
+            const usedDessertGroups: string[] = [drinkGroup] // 음료 그룹 제외
+
+            for (let di = 0; di < maxDesserts; di++) {
+              const tierWithThisDessert = tiers.find(t => t.dessertCount > di)
+              if (!tierWithThisDessert) break
+              const prevTierCost = di === 0
+                ? ff.cost + (drink?.cost ?? 0)
+                : ff.cost + (drink?.cost ?? 0) + selectedDesserts.reduce((s, x) => s + x.cost, 0)
+              const targetDessertCost = getTarget(tierWithThisDessert.mealPlanName) - prevTierCost
+
+              const dGroup = pickDessertGroup(usedDessertGroups)
+              usedDessertGroups.push(dGroup)
+              const dPool = poolByGroups(dessertProducts, [dGroup])
+              const dessert = selectProduct(dPool, targetDessertCost, dessertFreqs[di], dayIndex, usedTodayIds)
+              if (dessert) {
+                selectedDesserts.push(dessert)
+                dessertFreqs[di].markUsed(dessert.id, dayIndex)
+                usedTodayIds.add(dessert.id)
+              }
+            }
+
+            // 조합 고유성 보장 (7일 window)
+            const comboIds = [drink?.id ?? '', ...selectedDesserts.map(d => d.id)].filter(Boolean)
+            if (!combinationTracker.isUnique(comboIds)) {
+              // 중복 시 마지막 디저트를 다른 상품으로 교체 시도
+              if (selectedDesserts.length > 0) {
+                const lastIdx = selectedDesserts.length - 1
+                const altPool = dessertProducts.filter(p => !usedTodayIds.has(p.id) && !selectedDesserts.slice(0, lastIdx).map(x => x.id).includes(p.id))
+                if (altPool.length > 0) {
+                  altPool.sort((a, b) => Math.abs(a.cost - (selectedDesserts[lastIdx]?.cost ?? 0)) - Math.abs(b.cost - (selectedDesserts[lastIdx]?.cost ?? 0)))
+                  selectedDesserts[lastIdx] = altPool[0]
+                }
+              }
+            }
+            combinationTracker.mark([drink?.id ?? '', ...selectedDesserts.map(x => x.id)].filter(Boolean))
+
+            // 각 tier별로 저장
+            for (const tier of tiers) {
+              const tierDesserts = selectedDesserts.slice(0, tier.dessertCount)
+              const totalCost = ff.cost + (drink?.cost ?? 0) + tierDesserts.reduce((s, x) => s + x.cost, 0)
+              result[tier.mealPlanName].push({
+                date: dateStr,
+                compositions: { [tier.pricePoint]: { ff, drink, desserts: tierDesserts, totalCost } }
+              })
+            }
+          }
+          return result
         }
 
         // ========== 김밥 식단 생성 ==========
         const gimbapProducts = products.filter(p => p.category === 'ff' && p.ffType === '김밥')
         if (gimbapProducts.length > 0) {
-          const meals3: DailyMeal[] = []
-          const meals4: DailyMeal[] = []
-          const meals5: DailyMeal[] = []
-          
-          const usedDrinkIds = new Set<string>()
-          const usedDessert1Ids = new Set<string>()
-          const usedDessert2Ids = new Set<string>()
-          
-          // 목표 원가
-          const target3 = getTargetCost('김밥3.5')
-          const target4 = getTargetCost('김밥4.5')
-          const target5 = getTargetCost('김밥5.5')
-          
-          for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
-            const currentDate = dates[dayIndex]
-            const year = currentDate.getFullYear()
-            const month = currentDate.getMonth()
-            const day = currentDate.getDate()
-            const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-            const dayOfWeek = currentDate.getDay()
-            
-            const ffIndex = dayIndex % gimbapProducts.length
-            const ff = gimbapProducts[ffIndex]
-            const usedTodayIds = new Set<string>()
-            
-            // 김밥3: FF + 음료
-            // 목표 음료 원가 = 김밥3 목표원가 - FF원가
-            const targetDrinkCost3 = target3 - ff.cost
-            const drinkGroup = DRINK_GROUP_BY_DAY[dayOfWeek]
-            let availableDrinks = drinkProducts.filter(d => d.group === drinkGroup)
-            // 해당 그룹 음료가 없으면 전체 음료에서 선택
-            if (availableDrinks.length === 0) availableDrinks = drinkProducts
-            
-            const drink = selectProductByTargetCost(availableDrinks, targetDrinkCost3, usedDrinkIds, usedTodayIds)
-            if (drink) {
-              usedDrinkIds.add(drink.id)
-              usedTodayIds.add(drink.id)
-            }
-            
-            const totalCost3 = ff.cost + (drink?.cost || 0)
-            meals3.push({
-              date,
-              compositions: { 3500: { ff, drink, desserts: [], totalCost: totalCost3 } }
-            })
-            
-            // 김밥4: 김밥3 + 디저트1
-            // 목표 디저트1 원가 = 김밥4 목표원가 - 김밥3 원가
-            const targetDessert1Cost = target4 - totalCost3
-            const dessert1Group = DESSERT1_GROUP_BY_DAY[dayOfWeek]
-            let availableDesserts1 = dessertProducts.filter(d => d.group === dessert1Group)
-            // 해당 그룹 디저트가 없으면 전체 디저트에서 선택
-            if (availableDesserts1.length === 0) availableDesserts1 = dessertProducts
-            
-            const dessert1 = selectProductByTargetCost(availableDesserts1, targetDessert1Cost, usedDessert1Ids, usedTodayIds)
-            if (dessert1) {
-              usedDessert1Ids.add(dessert1.id)
-              usedTodayIds.add(dessert1.id)
-            }
-            
-            const desserts4 = dessert1 ? [dessert1] : []
-            const totalCost4 = totalCost3 + desserts4.reduce((sum, d) => sum + d.cost, 0)
-            meals4.push({
-              date,
-              compositions: { 4500: { ff, drink, desserts: desserts4, totalCost: totalCost4 } }
-            })
-            
-            // 김밥5: 김밥4 + 디저트2
-            // 목표 디저트2 원가 = 김밥5 목표원가 - 김밥4 원가
-            const targetDessert2Cost = target5 - totalCost4
-            const dessert2Groups = DESSERT2_GROUPS_BY_DAY[dayOfWeek]
-            let availableDesserts2: Product[] = []
-            for (const group of dessert2Groups) {
-              availableDesserts2.push(...dessertProducts.filter(d => d.group === group && !usedTodayIds.has(d.id)))
-            }
-            // 해당 그룹 디저트가 없으면 전체 디저트에서 선택 (오늘 사용 안한 것)
-            if (availableDesserts2.length === 0) {
-              availableDesserts2 = dessertProducts.filter(d => !usedTodayIds.has(d.id))
-            }
-            
-            const dessert2 = selectProductByTargetCost(availableDesserts2, targetDessert2Cost, usedDessert2Ids, usedTodayIds)
-            if (dessert2) {
-              usedDessert2Ids.add(dessert2.id)
-            }
-            
-            const desserts5 = [...desserts4]
-            if (dessert2) desserts5.push(dessert2)
-            const totalCost5 = totalCost3 + desserts5.reduce((sum, d) => sum + d.cost, 0)
-            meals5.push({
-              date,
-              compositions: { 5500: { ff, drink, desserts: desserts5, totalCost: totalCost5 } }
-            })
-          }
-          
-          mealPlanMeals['김밥3.5'] = meals3
-          mealPlanMeals['김밥4.5'] = meals4
-          mealPlanMeals['김밥5.5'] = meals5
+          const meals = buildStandardMeals(
+            gimbapProducts,
+            [
+              { pricePoint: 3500, mealPlanName: '김밥3.5', dessertCount: 0 },
+              { pricePoint: 4500, mealPlanName: '김밥4.5', dessertCount: 1 },
+              { pricePoint: 5500, mealPlanName: '김밥5.5', dessertCount: 2 },
+            ],
+            false
+          )
+          Object.assign(mealPlanMeals, meals)
         }
-        
+
         // ========== 샌드 식단 생성 (김밥과 동일한 음료/디저트) ==========
         const sandProducts = products.filter(p => p.category === 'ff' && p.ffType === '샌드')
-        const gimbap3Meals = mealPlanMeals['김밥3.5']
-        const gimbap4Meals = mealPlanMeals['김밥4.5']
-        const gimbap5Meals = mealPlanMeals['김밥5.5']
-        
-        if (sandProducts.length > 0 && gimbap3Meals) {
-          mealPlanMeals['샌드3.5'] = gimbap3Meals.map((meal, idx) => {
-            const sandFF = sandProducts[idx % sandProducts.length]
-            const comp = meal.compositions[3500]
-            return {
-              date: meal.date,
-              compositions: {
-                3500: {
-                  ff: sandFF,
-                  drink: comp?.drink,
-                  desserts: [],
-                  totalCost: sandFF.cost + (comp?.drink?.cost || 0)
-                }
-              }
-            }
-          })
-          
-          if (gimbap4Meals) {
-            mealPlanMeals['샌드4.5'] = gimbap4Meals.map((meal, idx) => {
+        if (sandProducts.length > 0 && mealPlanMeals['김밥3.5']) {
+          const priceTiers: [string, number][] = [['3.5', 3500], ['4.5', 4500], ['5.5', 5500]]
+          for (const [suffix, price] of priceTiers) {
+            const base = mealPlanMeals[`김밥${suffix}`]
+            if (!base) continue
+            mealPlanMeals[`샌드${suffix}`] = base.map((meal, idx) => {
               const sandFF = sandProducts[idx % sandProducts.length]
-              const comp = meal.compositions[4500]
-              const desserts = comp?.desserts || []
+              const comp = meal.compositions[price]
+              const desserts = comp?.desserts ?? []
               return {
                 date: meal.date,
                 compositions: {
-                  4500: {
+                  [price]: {
                     ff: sandFF,
                     drink: comp?.drink,
                     desserts,
-                    totalCost: sandFF.cost + (comp?.drink?.cost || 0) + desserts.reduce((sum, d) => sum + d.cost, 0)
-                  }
-                }
-              }
-            })
-          }
-          
-          if (gimbap5Meals) {
-            mealPlanMeals['샌드5.5'] = gimbap5Meals.map((meal, idx) => {
-              const sandFF = sandProducts[idx % sandProducts.length]
-              const comp = meal.compositions[5500]
-              const desserts = comp?.desserts || []
-              return {
-                date: meal.date,
-                compositions: {
-                  5500: {
-                    ff: sandFF,
-                    drink: comp?.drink,
-                    desserts,
-                    totalCost: sandFF.cost + (comp?.drink?.cost || 0) + desserts.reduce((sum, d) => sum + d.cost, 0)
+                    totalCost: sandFF.cost + (comp?.drink?.cost ?? 0) + desserts.reduce((s, d) => s + d.cost, 0)
                   }
                 }
               }
             })
           }
         }
-        
+
         // ========== 삼각 식단 생성 ==========
-        // 삼각3: FF + 음료(김밥3과 동일) + 디저트1
-        // 삼각4: 삼각3 + 김밥5의 디저트2
+        // 삼각3(3.5): FF + 음료 + 디저트B + 디저트C (구성품 3개)
+        // 삼각4(4.5): 삼각3 + 디저트D (구성품 4개)
         const samgakProducts = products.filter(p => p.category === 'ff' && p.ffType === '주먹밥')
-        
-        if (samgakProducts.length > 0 && gimbap3Meals && gimbap5Meals) {
+        if (samgakProducts.length > 0) {
           const meals3: DailyMeal[] = []
           const meals4: DailyMeal[] = []
-          
-          const usedDessert1Ids = new Set<string>()
-          const target3 = getTargetCost('삼각3.5')
-          
+          const drinkFreq = makeFreqTracker()
+          const dessertFreqs = [makeFreqTracker(), makeFreqTracker(), makeFreqTracker()]
+          const combinationTracker = makeCombinationTracker()
+          let prevDrinkGroup: string | null = null
+
           for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
-            const currentDate = dates[dayIndex]
-            const year = currentDate.getFullYear()
-            const month = currentDate.getMonth()
-            const day = currentDate.getDate()
-            const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-            const dayOfWeek = currentDate.getDay()
-            
-            const ffIndex = dayIndex % samgakProducts.length
-            const ff = samgakProducts[ffIndex]
-            
-            // 김밥3의 음료 사용
-            const gimbap3Comp = gimbap3Meals[dayIndex]?.compositions[3500]
-            const drink = gimbap3Comp?.drink
-            
-            // 김밥5의 디저트2 가져오기
-            const gimbap5Comp = gimbap5Meals[dayIndex]?.compositions[5500]
-            const gimbap5Dessert2 = gimbap5Comp?.desserts?.[1]
-            
-            const usedTodayIds = new Set<string>()
-            if (drink) usedTodayIds.add(drink.id)
-            
-            // 디저트1 선택 (목표 원가에 맞게)
-            const targetDessert1Cost = target3 - ff.cost - (drink?.cost || 0)
-            const dessert1Group = DESSERT1_GROUP_BY_DAY[dayOfWeek]
-            let availableDesserts1Samgak = dessertProducts.filter(d => d.group === dessert1Group)
-            if (availableDesserts1Samgak.length === 0) availableDesserts1Samgak = dessertProducts
-            
-            const dessert1 = selectProductByTargetCost(availableDesserts1Samgak, targetDessert1Cost, usedDessert1Ids, usedTodayIds)
-            if (dessert1) {
-              usedDessert1Ids.add(dessert1.id)
-              usedTodayIds.add(dessert1.id)
+            const d = dates[dayIndex]
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            const ff = samgakProducts[dayIndex % samgakProducts.length]
+            const usedTodayIds = new Set<string>([ff.id])
+
+            // 음료 선택 (삼각은 일반 음료 그룹)
+            const drinkGroup = pickDrinkGroup(false, prevDrinkGroup)
+            prevDrinkGroup = drinkGroup
+            const drinkPool = poolByGroups(drinkProducts, [drinkGroup])
+            const targetDrink = getTarget('삼각3.5') - ff.cost
+            const drink = selectProduct(drinkPool, targetDrink, drinkFreq, dayIndex, usedTodayIds)
+            if (drink) { drinkFreq.markUsed(drink.id, dayIndex); usedTodayIds.add(drink.id) }
+
+            // 삼각3: 디저트 2개 (B, C)
+            const usedDessertGroups: string[] = [drinkGroup]
+            const desserts3: Product[] = []
+            const target3 = getTarget('삼각3.5')
+            const target4 = getTarget('삼각4.5')
+
+            for (let di = 0; di < 2; di++) {
+              const baseCost = ff.cost + (drink?.cost ?? 0) + desserts3.reduce((s, x) => s + x.cost, 0)
+              const targetCost = (di === 0 ? target3 : target4) - baseCost
+              const dGroup = pickDessertGroup(usedDessertGroups)
+              usedDessertGroups.push(dGroup)
+              const dPool = poolByGroups(dessertProducts, [dGroup])
+              const dessert = selectProduct(dPool, targetCost, dessertFreqs[di], dayIndex, usedTodayIds)
+              if (dessert) {
+                desserts3.push(dessert)
+                dessertFreqs[di].markUsed(dessert.id, dayIndex)
+                usedTodayIds.add(dessert.id)
+              }
             }
-            
-            const desserts3 = dessert1 ? [dessert1] : []
-            const totalCost3 = ff.cost + (drink?.cost || 0) + desserts3.reduce((sum, d) => sum + d.cost, 0)
-            meals3.push({
-              date,
-              compositions: { 3500: { ff, drink, desserts: desserts3, totalCost: totalCost3 } }
-            })
-            
-            // 삼각4: 삼각3 + 김밥5의 디저트2
-            const desserts4 = [...desserts3]
-            if (gimbap5Dessert2) desserts4.push(gimbap5Dessert2)
-            const totalCost4 = ff.cost + (drink?.cost || 0) + desserts4.reduce((sum, d) => sum + d.cost, 0)
-            meals4.push({
-              date,
-              compositions: { 4500: { ff, drink, desserts: desserts4, totalCost: totalCost4 } }
-            })
+
+            // 삼각4: 디저트 1개 추가 (D)
+            const baseCost4 = ff.cost + (drink?.cost ?? 0) + desserts3.reduce((s, x) => s + x.cost, 0)
+            const targetDessert4 = target4 - baseCost4
+            const dGroup4 = pickDessertGroup(usedDessertGroups)
+            const dPool4 = poolByGroups(dessertProducts, [dGroup4])
+            const dessert4th = selectProduct(dPool4, targetDessert4, dessertFreqs[2], dayIndex, usedTodayIds)
+            if (dessert4th) dessertFreqs[2].markUsed(dessert4th.id, dayIndex)
+
+            const desserts4 = dessert4th ? [...desserts3, dessert4th] : [...desserts3]
+
+            // 조합 고유성
+            const comboIds3 = [drink?.id ?? '', ...desserts3.map(x => x.id)].filter(Boolean)
+            if (!combinationTracker.isUnique(comboIds3) && desserts3.length > 0) {
+              const altPool = dessertProducts.filter(p => !usedTodayIds.has(p.id))
+              if (altPool.length > 0) desserts3[desserts3.length - 1] = altPool[0]
+            }
+            combinationTracker.mark(comboIds3)
+
+            const totalCost3 = ff.cost + (drink?.cost ?? 0) + desserts3.reduce((s, x) => s + x.cost, 0)
+            const totalCost4 = ff.cost + (drink?.cost ?? 0) + desserts4.reduce((s, x) => s + x.cost, 0)
+
+            meals3.push({ date: dateStr, compositions: { 3500: { ff, drink, desserts: desserts3, totalCost: totalCost3 } } })
+            meals4.push({ date: dateStr, compositions: { 4500: { ff, drink, desserts: desserts4, totalCost: totalCost4 } } })
           }
-          
           mealPlanMeals['삼각3.5'] = meals3
           mealPlanMeals['삼각4.5'] = meals4
         }
-        
+
         // ========== 버거 식단 생성 ==========
         const burgerProducts = products.filter(p => p.category === 'ff' && p.ffType === '버거')
         if (burgerProducts.length > 0) {
-          const meals3: DailyMeal[] = []
-          const meals4: DailyMeal[] = []
-          const meals5: DailyMeal[] = []
-          
-          const usedDrinkIds = new Set<string>()
-          const usedDessert1Ids = new Set<string>()
-          const usedDessert2Ids = new Set<string>()
-          
-          const target3 = getTargetCost('버거3.5')
-          const target4 = getTargetCost('버거4.5')
-          const target5 = getTargetCost('버거5.5')
-          
-          for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
-            const currentDate = dates[dayIndex]
-            const year = currentDate.getFullYear()
-            const month = currentDate.getMonth()
-            const day = currentDate.getDate()
-            const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-            const dayOfWeek = currentDate.getDay()
-            
-            const ffIndex = dayIndex % burgerProducts.length
-            const ff = burgerProducts[ffIndex]
-            const usedTodayIds = new Set<string>()
-            
-            // 버거는 탄산 음료만
-            const targetDrinkCost = target3 - ff.cost
-            let availableDrinksBurger = drinkProducts.filter(d => d.group === '탄산')
-            if (availableDrinksBurger.length === 0) availableDrinksBurger = drinkProducts
-            
-            const drink = selectProductByTargetCost(availableDrinksBurger, targetDrinkCost, usedDrinkIds, usedTodayIds)
-            if (drink) {
-              usedDrinkIds.add(drink.id)
-              usedTodayIds.add(drink.id)
-            }
-            
-            const totalCost3 = ff.cost + (drink?.cost || 0)
-            meals3.push({
-              date,
-              compositions: { 3500: { ff, drink, desserts: [], totalCost: totalCost3 } }
-            })
-            
-            // 버거4: 버거3 + 디저트1
-            const targetDessert1CostBurger = target4 - totalCost3
-            const dessert1GroupBurger = DESSERT1_GROUP_BY_DAY[dayOfWeek]
-            let availableDesserts1Burger = dessertProducts.filter(d => d.group === dessert1GroupBurger)
-            if (availableDesserts1Burger.length === 0) availableDesserts1Burger = dessertProducts
-            
-            const dessert1 = selectProductByTargetCost(availableDesserts1Burger, targetDessert1CostBurger, usedDessert1Ids, usedTodayIds)
-            if (dessert1) {
-              usedDessert1Ids.add(dessert1.id)
-              usedTodayIds.add(dessert1.id)
-            }
-            
-            const desserts4 = dessert1 ? [dessert1] : []
-            const totalCost4 = totalCost3 + desserts4.reduce((sum, d) => sum + d.cost, 0)
-            meals4.push({
-              date,
-              compositions: { 4500: { ff, drink, desserts: desserts4, totalCost: totalCost4 } }
-            })
-            
-            // 버거5: 버거4 + 디저트2
-            const targetDessert2CostBurger = target5 - totalCost4
-            const dessert2GroupsBurger = DESSERT2_GROUPS_BY_DAY[dayOfWeek]
-            let availableDesserts2Burger: Product[] = []
-            for (const group of dessert2GroupsBurger) {
-              availableDesserts2Burger.push(...dessertProducts.filter(d => d.group === group && !usedTodayIds.has(d.id)))
-            }
-            if (availableDesserts2Burger.length === 0) {
-              availableDesserts2Burger = dessertProducts.filter(d => !usedTodayIds.has(d.id))
-            }
-            
-            const dessert2 = selectProductByTargetCost(availableDesserts2Burger, targetDessert2CostBurger, usedDessert2Ids, usedTodayIds)
-            if (dessert2) {
-              usedDessert2Ids.add(dessert2.id)
-            }
-            
-            const desserts5 = [...desserts4]
-            if (dessert2) desserts5.push(dessert2)
-            const totalCost5 = totalCost3 + desserts5.reduce((sum, d) => sum + d.cost, 0)
-            meals5.push({
-              date,
-              compositions: { 5500: { ff, drink, desserts: desserts5, totalCost: totalCost5 } }
-            })
-          }
-          
-          mealPlanMeals['버거3.5'] = meals3
-          mealPlanMeals['버거4.5'] = meals4
-          mealPlanMeals['버거5.5'] = meals5
+          const meals = buildStandardMeals(
+            burgerProducts,
+            [
+              { pricePoint: 3500, mealPlanName: '버거3.5', dessertCount: 0 },
+              { pricePoint: 4500, mealPlanName: '버거4.5', dessertCount: 1 },
+              { pricePoint: 5500, mealPlanName: '버거5.5', dessertCount: 2 },
+            ],
+            true // 버거 = 탄산 75%, 주스 25%
+          )
+          Object.assign(mealPlanMeals, meals)
         }
-        
+
         // ========== 도시락 식단 생성 ==========
         const dosirakProducts = products.filter(p => p.category === 'ff' && p.ffType === '도시락')
         if (dosirakProducts.length > 0) {
           const meals45: DailyMeal[] = []
           const meals55: DailyMeal[] = []
           const meals65: DailyMeal[] = []
-          
-          const usedDrinkIds = new Set<string>()
-          const usedDessert1Ids = new Set<string>()
-          
-          const target45 = getTargetCost('도시락4.5')
-          const target55 = getTargetCost('도시락5.5')
-          const target65 = getTargetCost('도시락6.5')
-          
+
+          const drinkFreq = makeFreqTracker()
+          const dessertFreq55 = makeFreqTracker()
+          const dessertFreq65 = makeFreqTracker()
+          let prevDrinkGroup: string | null = null
+
           for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
-            const currentDate = dates[dayIndex]
-            const year = currentDate.getFullYear()
-            const month = currentDate.getMonth()
-            const day = currentDate.getDate()
-            const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-            const dayOfWeek = currentDate.getDay()
-            
-            const ffIndex = dayIndex % dosirakProducts.length
-            const ff = dosirakProducts[ffIndex]
-            const usedTodayIds = new Set<string>()
-            
-            // 도시락4.5: 도시락 + 음료
-            const targetDrinkCostDosirak = target45 - ff.cost
-            const drinkGroupDosirak = DRINK_GROUP_BY_DAY[dayOfWeek]
-            let availableDrinksDosirak = drinkProducts.filter(d => d.group === drinkGroupDosirak)
-            if (availableDrinksDosirak.length === 0) availableDrinksDosirak = drinkProducts
-            
-            const drink = selectProductByTargetCost(availableDrinksDosirak, targetDrinkCostDosirak, usedDrinkIds, usedTodayIds)
-            if (drink) {
-              usedDrinkIds.add(drink.id)
-              usedTodayIds.add(drink.id)
-            }
-            
-            const totalCost45 = ff.cost + (drink?.cost || 0)
-            meals45.push({
-              date,
-              compositions: { 4500: { ff, drink, desserts: [], totalCost: totalCost45 } }
-            })
-            
-            // 도시락5.5: 도시락4.5 + 디저트1
-            const targetDessert1Cost55 = target55 - totalCost45
-            const dessert1GroupDosirak = DESSERT1_GROUP_BY_DAY[dayOfWeek]
-            let availableDesserts1Dosirak = dessertProducts.filter(d => d.group === dessert1GroupDosirak)
-            if (availableDesserts1Dosirak.length === 0) availableDesserts1Dosirak = dessertProducts
-            
-            const dessert1_55 = selectProductByTargetCost(availableDesserts1Dosirak, targetDessert1Cost55, usedDessert1Ids, usedTodayIds)
-            if (dessert1_55) {
-              usedDessert1Ids.add(dessert1_55.id)
-              usedTodayIds.add(dessert1_55.id)
-            }
-            
-            const desserts55 = dessert1_55 ? [dessert1_55] : []
-            const totalCost55 = totalCost45 + desserts55.reduce((sum, d) => sum + d.cost, 0)
-            meals55.push({
-              date,
-              compositions: { 5500: { ff, drink, desserts: desserts55, totalCost: totalCost55 } }
-            })
-            
-            // 도시락6.5: 도시락 + 음료 + 디저트1 (5.5와 동일 구성, 더 비싼 상품)
-            const targetDessert1Cost65 = target65 - totalCost45
-            const dessert1_65 = selectProductByTargetCost(
-              availableDesserts1Dosirak.filter(d => d.id !== dessert1_55?.id),
-              targetDessert1Cost65,
-              new Set<string>(),
-              usedTodayIds
-            ) || dessert1_55
-            
-            const desserts65 = dessert1_65 ? [dessert1_65] : []
-            const totalCost65 = totalCost45 + desserts65.reduce((sum, d) => sum + d.cost, 0)
-            meals65.push({
-              date,
-              compositions: { 6500: { ff, drink, desserts: desserts65, totalCost: totalCost65 } }
-            })
+            const d = dates[dayIndex]
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            const ff = dosirakProducts[dayIndex % dosirakProducts.length]
+            const usedTodayIds = new Set<string>([ff.id])
+
+            const target45 = getTarget('도시락4.5')
+            const target55 = getTarget('도시락5.5')
+            const target65 = getTarget('도시락6.5')
+
+            // 음료
+            const drinkGroup = pickDrinkGroup(false, prevDrinkGroup)
+            prevDrinkGroup = drinkGroup
+            const drinkPool = poolByGroups(drinkProducts, [drinkGroup])
+            const drink = selectProduct(drinkPool, target45 - ff.cost, drinkFreq, dayIndex, usedTodayIds)
+            if (drink) { drinkFreq.markUsed(drink.id, dayIndex); usedTodayIds.add(drink.id) }
+
+            const totalCost45 = ff.cost + (drink?.cost ?? 0)
+            meals45.push({ date: dateStr, compositions: { 4500: { ff, drink, desserts: [], totalCost: totalCost45 } } })
+
+            // 도시락5.5: + 디저트1
+            const usedDessertGroups55 = [drinkGroup]
+            const dGroup55 = pickDessertGroup(usedDessertGroups55)
+            const dPool55 = poolByGroups(dessertProducts, [dGroup55])
+            const dessert55 = selectProduct(dPool55, target55 - totalCost45, dessertFreq55, dayIndex, usedTodayIds)
+            if (dessert55) { dessertFreq55.markUsed(dessert55.id, dayIndex); usedTodayIds.add(dessert55.id) }
+
+            const desserts55 = dessert55 ? [dessert55] : []
+            const totalCost55 = totalCost45 + desserts55.reduce((s, x) => s + x.cost, 0)
+            meals55.push({ date: dateStr, compositions: { 5500: { ff, drink, desserts: desserts55, totalCost: totalCost55 } } })
+
+            // 도시락6.5: + 디저트1 (다른 상품, 목표원가 다름)
+            const usedDessertGroups65 = [drinkGroup]
+            const dGroup65 = pickDessertGroup(usedDessertGroups65)
+            const dPool65 = poolByGroups(dessertProducts.filter(p => p.id !== dessert55?.id), [dGroup65])
+            const fallbackPool65 = dPool65.length > 0 ? dPool65 : dessertProducts.filter(p => !usedTodayIds.has(p.id))
+            const dessert65 = selectProduct(fallbackPool65, target65 - totalCost45, dessertFreq65, dayIndex, usedTodayIds)
+            if (dessert65) dessertFreq65.markUsed(dessert65.id, dayIndex)
+
+            const desserts65 = dessert65 ? [dessert65] : desserts55
+            const totalCost65 = totalCost45 + desserts65.reduce((s, x) => s + x.cost, 0)
+            meals65.push({ date: dateStr, compositions: { 6500: { ff, drink, desserts: desserts65, totalCost: totalCost65 } } })
           }
-          
+
           mealPlanMeals['도시락4.5'] = meals45
           mealPlanMeals['도시락5.5'] = meals55
           mealPlanMeals['도시락6.5'] = meals65
         }
-        
+
         set({ mealPlanMeals })
       },
       
