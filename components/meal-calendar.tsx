@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, AlertCircle, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useMealboxStore } from '@/lib/store'
 import { MealComposition, ALL_MEAL_PLANS, Product } from '@/lib/types'
+import { downloadCustomerExcel, downloadFactoryExcel } from '@/lib/excel-export'
 import {
   Dialog,
   DialogContent,
@@ -34,6 +35,7 @@ export function MealCalendar() {
     setSelectedMonth, 
     mealPlanMeals, 
     targetCosts,
+    mealPlanTargetCosts,
     selectedMealPlan,
     startDate: storedStartDate,
     endDate: storedEndDate
@@ -194,8 +196,44 @@ export function MealCalendar() {
     )
   }
 
+  const handleDownloadCustomer = () => {
+    if (!startDate || !endDate) return
+    downloadCustomerExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate)
+  }
+
+  const handleDownloadFactory = () => {
+    if (!startDate || !endDate) return
+    downloadFactoryExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate)
+  }
+
+  const hasData = startDate && endDate && Object.keys(mealPlanMeals).length > 0
+
   return (
     <div className="space-y-4">
+      {/* 다운로드 버튼 */}
+      <div className="flex justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleDownloadCustomer}
+          disabled={!hasData}
+          className="gap-1.5"
+        >
+          <Download className="w-3.5 h-3.5" />
+          고객용 식단표
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleDownloadFactory}
+          disabled={!hasData}
+          className="gap-1.5"
+        >
+          <Download className="w-3.5 h-3.5" />
+          공장용 식단표
+        </Button>
+      </div>
+
       <div className="flex gap-4">
         {/* 캘린더 */}
         <div className="flex-1 rounded-lg border border-border bg-card">
