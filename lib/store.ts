@@ -146,14 +146,36 @@ export const useMealboxStore = create<MealboxStore>()(
           MEAL_PLAN_COST_CONFIGS.find(c => c.mealPlanName === name)?.defaultCost ??
           1500
 
-        // ── 음료 그룹 상수 ──
+        // ── 음료/디저트 그룹 상수 ──
         const ALL_DRINK_GROUPS = ['탄산', '건강', '주스', '차', '요거트']
         const ALL_DESSERT_GROUPS = ['당류', '단백질', '탄수화물', '프레시', '컵라면', '요거트']
 
+        // 소비기한 기반 요거트 필터:
+        // 월(1), 화(2)만 허용 / 수(3)~일(0) 제외
+        const isYogurtAllowed = (dayOfWeek: number): boolean => {
+          return dayOfWeek === 1 || dayOfWeek === 2
+        }
+
+        // 요일에 따라 사용 가능한 음료 그룹 반환
+        const getAvailableDrinkGroups = (dayOfWeek: number): string[] => {
+          if (isYogurtAllowed(dayOfWeek)) return ALL_DRINK_GROUPS
+          return ALL_DRINK_GROUPS.filter(g => g !== '요거트')
+        }
+
+        // 요일에 따라 사용 가능한 디저트 그룹 반환
+        const getAvailableDessertGroups = (dayOfWeek: number): string[] => {
+          if (isYogurtAllowed(dayOfWeek)) return ALL_DESSERT_GROUPS
+          return ALL_DESSERT_GROUPS.filter(g => g !== '요거트')
+        }
+
         // 그룹에서 후보 추출 (없으면 전체 pool 반환)
-        const poolByGroups = (pool: Product[], groups: string[]): Product[] => {
-          const filtered = pool.filter(p => groups.includes(p.group ?? ''))
-          return filtered.length > 0 ? filtered : pool
+        // dayOfWeek를 받아 요거트 제외 여부 자동 적용
+        const poolByGroups = (pool: Product[], groups: string[], dayOfWeek: number): Product[] => {
+          const allowedGroups = groups.filter(g => g !== '요거트' || isYogurtAllowed(dayOfWeek))
+          const filtered = pool.filter(p => allowedGroups.includes(p.group ?? ''))
+          // fallback: 요거트 제외한 전체 pool
+          if (filtered.length > 0) return filtered
+          return pool.filter(p => p.group !== '요거트' || isYogurtAllowed(dayOfWeek))
         }
 
         // SKU 빈도 제한: 7일 내 최대 2회 사용 추적
@@ -201,17 +223,21 @@ export const useMealboxStore = create<MealboxStore>()(
         }
 
         // 음료 그룹 선택: 버거=탄산(75%)/주스(25%), 나머지=전날과 다른 그룹 랜덤
-        const pickDrinkGroup = (isBurger: boolean, prevGroup: string | null): string => {
+        // dayOfWeek: 요거트 허용 여부 판단에 사용
+        const pickDrinkGroup = (isBurger: boolean, prevGroup: string | null, dayOfWeek: number): string => {
           if (isBurger) return Math.random() < 0.75 ? '탄산' : '주스'
-          const available = ALL_DRINK_GROUPS.filter(g => g !== prevGroup)
-          return available[Math.floor(Math.random() * available.length)]
+          const available = getAvailableDrinkGroups(dayOfWeek).filter(g => g !== prevGroup)
+          const pool = available.length > 0 ? available : getAvailableDrinkGroups(dayOfWeek)
+          return pool[Math.floor(Math.random() * pool.length)]
         }
 
         // 디저트 그룹 선택: 음료 그룹과 중복 안되는 그룹에서 랜덤, 이미 선택된 그룹도 제외
-        const pickDessertGroup = (excludeGroups: string[]): string => {
-          const available = ALL_DESSERT_GROUPS.filter(g => !excludeGroups.includes(g))
-          if (available.length === 0) return ALL_DESSERT_GROUPS[Math.floor(Math.random() * ALL_DESSERT_GROUPS.length)]
-          return available[Math.floor(Math.random() * available.length)]
+        // dayOfWeek: 요거트 허용 여부 판단에 사용
+        const pickDessertGroup = (excludeGroups: string[], dayOfWeek: number): string => {
+          const available = getAvailableDessertGroups(dayOfWeek).filter(g => !excludeGroups.includes(g))
+          const fallback = getAvailableDessertGroups(dayOfWeek)
+          const pool = available.length > 0 ? available : fallback
+          return pool[Math.floor(Math.random() * pool.length)]
         }
 
         // 조합 고유성 체크: 7일 내 동일 A+B+C 반복 금지
@@ -249,14 +275,15 @@ export const useMealboxStore = create<MealboxStore>()(
 
           for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
             const d = dates[dayIndex]
+            const dayOfWeek = d.getDay()
             const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
             const ff = ffList[dayIndex % ffList.length]
             const usedTodayIds = new Set<string>([ff.id])
 
             // 음료 선택
-            const drinkGroup = pickDrinkGroup(isBurger, prevDrinkGroup)
+            const drinkGroup = pickDrinkGroup(isBurger, prevDrinkGroup, dayOfWeek)
             prevDrinkGroup = drinkGroup
-            const drinkPool = poolByGroups(drinkProducts, [drinkGroup])
+            const drinkPool = poolByGroups(drinkProducts, [drinkGroup], dayOfWeek)
             const targetDrink = getTarget(tiers[0].mealPlanName) - ff.cost
             const drink = selectProduct(drinkPool, targetDrink, drinkFreq, dayIndex, usedTodayIds)
             if (drink) { drinkFreq.markUsed(drink.id, dayIndex); usedTodayIds.add(drink.id) }
@@ -274,9 +301,9 @@ export const useMealboxStore = create<MealboxStore>()(
                 : ff.cost + (drink?.cost ?? 0) + selectedDesserts.reduce((s, x) => s + x.cost, 0)
               const targetDessertCost = getTarget(tierWithThisDessert.mealPlanName) - prevTierCost
 
-              const dGroup = pickDessertGroup(usedDessertGroups)
+              const dGroup = pickDessertGroup(usedDessertGroups, dayOfWeek)
               usedDessertGroups.push(dGroup)
-              const dPool = poolByGroups(dessertProducts, [dGroup])
+              const dPool = poolByGroups(dessertProducts, [dGroup], dayOfWeek)
               const dessert = selectProduct(dPool, targetDessertCost, dessertFreqs[di], dayIndex, usedTodayIds)
               if (dessert) {
                 selectedDesserts.push(dessert)
@@ -368,14 +395,15 @@ export const useMealboxStore = create<MealboxStore>()(
 
           for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
             const d = dates[dayIndex]
+            const dayOfWeek = d.getDay()
             const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
             const ff = samgakProducts[dayIndex % samgakProducts.length]
             const usedTodayIds = new Set<string>([ff.id])
 
             // 음료 선택 (삼각은 일반 음료 그룹)
-            const drinkGroup = pickDrinkGroup(false, prevDrinkGroup)
+            const drinkGroup = pickDrinkGroup(false, prevDrinkGroup, dayOfWeek)
             prevDrinkGroup = drinkGroup
-            const drinkPool = poolByGroups(drinkProducts, [drinkGroup])
+            const drinkPool = poolByGroups(drinkProducts, [drinkGroup], dayOfWeek)
             const targetDrink = getTarget('삼각3.5') - ff.cost
             const drink = selectProduct(drinkPool, targetDrink, drinkFreq, dayIndex, usedTodayIds)
             if (drink) { drinkFreq.markUsed(drink.id, dayIndex); usedTodayIds.add(drink.id) }
@@ -389,9 +417,9 @@ export const useMealboxStore = create<MealboxStore>()(
             for (let di = 0; di < 2; di++) {
               const baseCost = ff.cost + (drink?.cost ?? 0) + desserts3.reduce((s, x) => s + x.cost, 0)
               const targetCost = (di === 0 ? target3 : target4) - baseCost
-              const dGroup = pickDessertGroup(usedDessertGroups)
+              const dGroup = pickDessertGroup(usedDessertGroups, dayOfWeek)
               usedDessertGroups.push(dGroup)
-              const dPool = poolByGroups(dessertProducts, [dGroup])
+              const dPool = poolByGroups(dessertProducts, [dGroup], dayOfWeek)
               const dessert = selectProduct(dPool, targetCost, dessertFreqs[di], dayIndex, usedTodayIds)
               if (dessert) {
                 desserts3.push(dessert)
@@ -403,8 +431,8 @@ export const useMealboxStore = create<MealboxStore>()(
             // 삼각4: 디저트 1개 추가 (D)
             const baseCost4 = ff.cost + (drink?.cost ?? 0) + desserts3.reduce((s, x) => s + x.cost, 0)
             const targetDessert4 = target4 - baseCost4
-            const dGroup4 = pickDessertGroup(usedDessertGroups)
-            const dPool4 = poolByGroups(dessertProducts, [dGroup4])
+            const dGroup4 = pickDessertGroup(usedDessertGroups, dayOfWeek)
+            const dPool4 = poolByGroups(dessertProducts, [dGroup4], dayOfWeek)
             const dessert4th = selectProduct(dPool4, targetDessert4, dessertFreqs[2], dayIndex, usedTodayIds)
             if (dessert4th) dessertFreqs[2].markUsed(dessert4th.id, dayIndex)
 
@@ -457,6 +485,7 @@ export const useMealboxStore = create<MealboxStore>()(
 
           for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
             const d = dates[dayIndex]
+            const dayOfWeek = d.getDay()
             const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
             const ff = dosirakProducts[dayIndex % dosirakProducts.length]
             const usedTodayIds = new Set<string>([ff.id])
@@ -466,9 +495,9 @@ export const useMealboxStore = create<MealboxStore>()(
             const target65 = getTarget('도시락6.5')
 
             // 음료
-            const drinkGroup = pickDrinkGroup(false, prevDrinkGroup)
+            const drinkGroup = pickDrinkGroup(false, prevDrinkGroup, dayOfWeek)
             prevDrinkGroup = drinkGroup
-            const drinkPool = poolByGroups(drinkProducts, [drinkGroup])
+            const drinkPool = poolByGroups(drinkProducts, [drinkGroup], dayOfWeek)
             const drink = selectProduct(drinkPool, target45 - ff.cost, drinkFreq, dayIndex, usedTodayIds)
             if (drink) { drinkFreq.markUsed(drink.id, dayIndex); usedTodayIds.add(drink.id) }
 
@@ -477,8 +506,8 @@ export const useMealboxStore = create<MealboxStore>()(
 
             // 도시락5.5: + 디저트1
             const usedDessertGroups55 = [drinkGroup]
-            const dGroup55 = pickDessertGroup(usedDessertGroups55)
-            const dPool55 = poolByGroups(dessertProducts, [dGroup55])
+            const dGroup55 = pickDessertGroup(usedDessertGroups55, dayOfWeek)
+            const dPool55 = poolByGroups(dessertProducts, [dGroup55], dayOfWeek)
             const dessert55 = selectProduct(dPool55, target55 - totalCost45, dessertFreq55, dayIndex, usedTodayIds)
             if (dessert55) { dessertFreq55.markUsed(dessert55.id, dayIndex); usedTodayIds.add(dessert55.id) }
 
@@ -488,8 +517,8 @@ export const useMealboxStore = create<MealboxStore>()(
 
             // 도시락6.5: + 디저트1 (다른 상품, 목표원가 다름)
             const usedDessertGroups65 = [drinkGroup]
-            const dGroup65 = pickDessertGroup(usedDessertGroups65)
-            const dPool65 = poolByGroups(dessertProducts.filter(p => p.id !== dessert55?.id), [dGroup65])
+            const dGroup65 = pickDessertGroup(usedDessertGroups65, dayOfWeek)
+            const dPool65 = poolByGroups(dessertProducts.filter(p => p.id !== dessert55?.id), [dGroup65], dayOfWeek)
             const fallbackPool65 = dPool65.length > 0 ? dPool65 : dessertProducts.filter(p => !usedTodayIds.has(p.id))
             const dessert65 = selectProduct(fallbackPool65, target65 - totalCost45, dessertFreq65, dayIndex, usedTodayIds)
             if (dessert65) dessertFreq65.markUsed(dessert65.id, dayIndex)
