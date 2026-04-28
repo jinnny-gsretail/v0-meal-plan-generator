@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { ChevronLeft, ChevronRight, AlertCircle, Download, Pencil, Check } from 'lucide-react'
+import { ChevronLeft, ChevronRight, AlertCircle, Download, Pencil, Check, Factory, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useMealboxStore } from '@/lib/store'
 import { MealComposition, ALL_MEAL_PLANS, Product } from '@/lib/types'
@@ -48,6 +48,9 @@ export function MealCalendar() {
   } = useMealboxStore()
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   
+  // 뷰 모드: 'customer' = 고객 수령일 기준, 'factory' = 공장 생산일 기준 (D-1)
+  const [viewMode, setViewMode] = useState<'customer' | 'factory'>('customer')
+  
   // 구성품 수정 상태
   const [editingComponent, setEditingComponent] = useState<{
     date: string
@@ -92,8 +95,27 @@ export function MealCalendar() {
     ? ALL_MEAL_PLANS.find(m => m.name === selectedMealPlan) 
     : null
   
+  // 공장 생산일 기준: 캘린더 날짜에서 +1일한 데이터를 가져옴 (해당 칸에는 다음날 배송분이 표시)
+  // 고객 수령일 기준: 캘린더 날짜 그대로
   const getMealForDate = (dateStr: string) => {
+    if (viewMode === 'factory') {
+      // 캘린더 날짜 + 1일 = 실제 배송일의 식단 데이터
+      const calDate = new Date(dateStr)
+      calDate.setDate(calDate.getDate() + 1)
+      const deliveryDateStr = `${calDate.getFullYear()}-${String(calDate.getMonth() + 1).padStart(2, '0')}-${String(calDate.getDate()).padStart(2, '0')}`
+      return currentMealPlanData.find(m => m.date === deliveryDateStr)
+    }
     return currentMealPlanData.find(m => m.date === dateStr)
+  }
+  
+  // 공장 기준 배송일 라벨 (캘린더 날짜 + 1일)
+  const getDeliveryDateLabel = (dateStr: string) => {
+    if (viewMode === 'factory') {
+      const calDate = new Date(dateStr)
+      calDate.setDate(calDate.getDate() + 1)
+      return `${calDate.getMonth() + 1}/${calDate.getDate()} 배송분`
+    }
+    return null
   }
   
   // 캘린더 날짜 배열 생성 (이전 달, 현재 달, 다음 달 포함)
@@ -301,28 +323,53 @@ export function MealCalendar() {
 
   return (
     <div className="space-y-4">
-      {/* 다운로드 버튼 */}
-      <div className="flex justify-end gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleDownloadCustomer}
-          disabled={!hasData}
-          className="gap-1.5"
-        >
-          <Download className="w-3.5 h-3.5" />
-          고객용 식단표
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleDownloadFactory}
-          disabled={!hasData}
-          className="gap-1.5"
-        >
-          <Download className="w-3.5 h-3.5" />
-          공장용 식단표
-        </Button>
+      {/* 상단 컨트롤: 뷰 모드 토글 + 다운로드 버튼 */}
+      <div className="flex items-center justify-between">
+        {/* 뷰 모드 토글 */}
+        <div className="flex items-center gap-1 p-1 bg-secondary rounded-lg">
+          <Button
+            variant={viewMode === 'customer' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('customer')}
+            className="gap-1.5 h-8"
+          >
+            <Users className="w-3.5 h-3.5" />
+            고객 수령일
+          </Button>
+          <Button
+            variant={viewMode === 'factory' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('factory')}
+            className="gap-1.5 h-8"
+          >
+            <Factory className="w-3.5 h-3.5" />
+            공장 생산일
+          </Button>
+        </div>
+        
+        {/* 다운로드 버튼 */}
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadCustomer}
+            disabled={!hasData}
+            className="gap-1.5"
+          >
+            <Download className="w-3.5 h-3.5" />
+            고객용 식단표
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadFactory}
+            disabled={!hasData}
+            className="gap-1.5"
+          >
+            <Download className="w-3.5 h-3.5" />
+            공장용 식단표
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-4">
@@ -340,6 +387,11 @@ export function MealCalendar() {
               <p className="text-xs text-primary">
                 {selectedMealPlan} ({currentMealPlanInfo?.price.toLocaleString()}원)
               </p>
+              {viewMode === 'factory' && (
+                <p className="text-[10px] text-amber-600 font-medium mt-0.5">
+                  공장 생산일 기준 (D-1)
+                </p>
+              )}
             </div>
             <Button variant="ghost" size="sm" onClick={nextMonth}>
               <ChevronRight className="w-4 h-4" />
@@ -374,7 +426,18 @@ export function MealCalendar() {
               const targetCost = currentMealPlanInfo ? targetCosts[currentMealPlanInfo.price] * 1.03 : 0
               const isOverBudget = composition && composition.totalCost > targetCost
               
-              const inRange = isInRangeDate(currentDate)
+              // 공장 뷰: 생산일 범위 (배송일 - 1일이므로 하루 앞당겨 표시)
+              // 고객 뷰: 배송일 범위 그대로
+              const inRange = viewMode === 'factory'
+                ? (() => {
+                    // 캘린더 날짜 + 1일이 배송 범위에 있으면 표시
+                    const nextDay = new Date(currentDate)
+                    nextDay.setDate(nextDay.getDate() + 1)
+                    return startDate && endDate && nextDay >= startDate && nextDay <= endDate
+                  })()
+                : isInRangeDate(currentDate)
+              
+              const deliveryLabel = getDeliveryDateLabel(dateStr)
               
               return (
                 <div
@@ -382,15 +445,23 @@ export function MealCalendar() {
                   className={`min-h-24 p-1 border-r border-b border-border last:border-r-0 
                     ${!dateInfo.isCurrentMonth ? 'bg-secondary/30' : ''}
                     ${inRange ? 'hover:bg-secondary/30 cursor-pointer' : 'opacity-40'}
-                    ${isWeekend && inRange ? 'bg-secondary/10' : ''}`}
+                    ${isWeekend && inRange ? 'bg-secondary/10' : ''}
+                    ${viewMode === 'factory' && inRange ? 'bg-amber-50/50' : ''}`}
                   onClick={() => inRange && setSelectedDate(dateStr)}
                 >
-                  <div className={`text-xs font-medium mb-0.5 ${
-                    !dateInfo.isCurrentMonth 
-                      ? 'text-muted-foreground/50'
-                      : idx % 7 === 0 ? 'text-destructive' : idx % 7 === 6 ? 'text-primary' : 'text-foreground'
-                  }`}>
-                    {dateInfo.day}
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className={`text-xs font-medium ${
+                      !dateInfo.isCurrentMonth 
+                        ? 'text-muted-foreground/50'
+                        : idx % 7 === 0 ? 'text-destructive' : idx % 7 === 6 ? 'text-primary' : 'text-foreground'
+                    }`}>
+                      {dateInfo.day}
+                    </span>
+                    {viewMode === 'factory' && inRange && deliveryLabel && (
+                      <span className="text-[8px] text-amber-600 font-medium">
+                        {deliveryLabel}
+                      </span>
+                    )}
                   </div>
                   {inRange && composition && (
                     <div className="space-y-0.5">
