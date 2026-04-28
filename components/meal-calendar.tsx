@@ -447,7 +447,18 @@ export function MealCalendar() {
                     ${inRange ? 'hover:bg-secondary/30 cursor-pointer' : 'opacity-40'}
                     ${isWeekend && inRange ? 'bg-secondary/10' : ''}
                     ${viewMode === 'factory' && inRange ? 'bg-amber-50/50' : ''}`}
-                  onClick={() => inRange && setSelectedDate(dateStr)}
+                  onClick={() => {
+                    if (!inRange) return
+                    // 공장 뷰: 클릭한 셀에 표시된 식단(배송일 = 캘린더 날짜 + 1일)을 수정
+                    if (viewMode === 'factory') {
+                      const nextDay = new Date(currentDate)
+                      nextDay.setDate(nextDay.getDate() + 1)
+                      const deliveryDateStr = `${nextDay.getFullYear()}-${String(nextDay.getMonth() + 1).padStart(2, '0')}-${String(nextDay.getDate()).padStart(2, '0')}`
+                      setSelectedDate(deliveryDateStr)
+                    } else {
+                      setSelectedDate(dateStr)
+                    }
+                  }}
                 >
                   <div className="flex items-center justify-between mb-0.5">
                     <span className={`text-xs font-medium ${
