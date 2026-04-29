@@ -46,6 +46,7 @@ export function MealCalendar() {
     endDate: storedEndDate,
     products,
     updateMealComponent,
+    updateFF,
     snapshots,
     snapshotStatus,
     snapshotMessage,
@@ -58,15 +59,17 @@ export function MealCalendar() {
   // 뷰 모드: 'customer' = 고객 수령일 기준, 'factory' = 공장 생산일 기준 (D-1)
   const [viewMode, setViewMode] = useState<'customer' | 'factory'>('customer')
   
-  // 구성품 수정 상태
+  // 수정 대상 상태 (FF 포함 통합)
   const [editingComponent, setEditingComponent] = useState<{
     date: string
     mealPlanName: string
-    componentType: 'drink' | 'dessert'
-    componentIndex: number
+    componentType: 'ff' | 'drink' | 'dessert'
+    componentIndex: number   // dessert: 0=B, 1=C / ff·drink: 0
     currentProduct: Product | null
   } | null>(null)
   const [syncToRelated, setSyncToRelated] = useState(true)
+  // FF 수정 시 동일 가격대 전체 연동
+  const [syncSameType, setSyncSameType] = useState(true)
   
   // 스냅샷 다이얼로그 상태
   const [showSaveDialog, setShowSaveDialog] = useState(false)
@@ -283,77 +286,69 @@ export function MealCalendar() {
   // 교체 가능한 상품 목록 (제약 조건 필터링)
   const getAvailableProducts = useMemo(() => {
     if (!editingComponent) return []
-    
-    const { date, componentType } = editingComponent
+
+    const { date, componentType, mealPlanName } = editingComponent
     const d = new Date(date)
     const dayOfWeek = d.getDay()
-    
-    // 요거트 허용: 월(1), 화(2)만
     const isYogurtAllowed = dayOfWeek === 1 || dayOfWeek === 2
-    // 월요일 요거트 필수는 이미 음료에 요거트가 있으면 디저트에서 요거트 제외
     const isMonday = dayOfWeek === 1
-    
-    // 해당 식단의 현재 구성 확인 (요거트 중복 방지)
+
     const currentMealData = currentMealPlanData.find(m => m.date === date)
     const currentComp = currentMealData?.compositions[currentMealPlanInfo?.price || 0]
     const hasYogurtDrink = currentComp?.drink?.group === '요거트'
-    
+
+    // FF: 같은 ffType 내에서만 교체
+    if (componentType === 'ff') {
+      const ffTypePlan = ALL_MEAL_PLANS.find(p => p.name === mealPlanName)
+      const ffType = ffTypePlan?.ffType
+      return products
+        .filter(p => p.category === 'ff' && (!ffType || p.ffType === ffType))
+        .sort((a, b) => a.cost - b.cost)
+    }
+
     let pool: Product[] = []
-    
     if (componentType === 'drink') {
       pool = products.filter(p => p.category === 'drink')
-      // 수~일: 요거트 제외
-      if (!isYogurtAllowed) {
-        pool = pool.filter(p => p.group !== '요거트')
-      }
+      if (!isYogurtAllowed) pool = pool.filter(p => p.group !== '요거트')
     } else {
       pool = products.filter(p => p.category === 'dessert')
-      // 수~일: 요거트 제외
-      if (!isYogurtAllowed) {
-        pool = pool.filter(p => p.group !== '요거트')
-      }
-      // 월요일 + 음료가 요거트면 디저트에서 요거트 제외 (중복 금지)
-      if (isMonday && hasYogurtDrink) {
-        pool = pool.filter(p => p.group !== '요거트')
-      }
+      if (!isYogurtAllowed) pool = pool.filter(p => p.group !== '요거트')
+      if (isMonday && hasYogurtDrink) pool = pool.filter(p => p.group !== '요거트')
     }
-    
-    // 원가순 정렬
+
     return pool.sort((a, b) => a.cost - b.cost)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingComponent?.date, editingComponent?.componentType, products, currentMealPlanData, currentMealPlanInfo?.price])
+  }, [editingComponent?.date, editingComponent?.componentType, editingComponent?.mealPlanName, products, currentMealPlanData, currentMealPlanInfo?.price])
 
-  // 구성품 선택 핸들러
+  // 상품 선택 핸들러 (FF / 음료 / 디저트 통합)
   const handleSelectProduct = (product: Product) => {
-    if (!editingComponent || !selectedMealPlan) return
-    
-    updateMealComponent(
-      editingComponent.date,
-      editingComponent.mealPlanName,
-      editingComponent.componentType,
-      editingComponent.componentIndex,
-      product,
-      syncToRelated
-    )
-    
+    if (!editingComponent) return
+
+    if (editingComponent.componentType === 'ff') {
+      updateFF(editingComponent.date, editingComponent.mealPlanName, product, syncSameType)
+    } else {
+      updateMealComponent(
+        editingComponent.date,
+        editingComponent.mealPlanName,
+        editingComponent.componentType,
+        editingComponent.componentIndex,
+        product,
+        syncToRelated
+      )
+    }
+
     setEditingComponent(null)
   }
 
-  // 구성품 수정 버튼 클릭
+  // 수정 버튼 클릭 (FF 포함 통합)
   const handleEditComponent = (
     date: string,
-    componentType: 'drink' | 'dessert',
+    componentType: 'ff' | 'drink' | 'dessert',
     componentIndex: number,
     currentProduct: Product | null
   ) => {
     if (!selectedMealPlan) return
-    setEditingComponent({
-      date,
-      mealPlanName: selectedMealPlan,
-      componentType,
-      componentIndex,
-      currentProduct
-    })
+    setEditingComponent({ date, mealPlanName: selectedMealPlan, componentType, componentIndex, currentProduct })
   }
 
   // 스냅샷 저장 핸들러
@@ -412,7 +407,7 @@ export function MealCalendar() {
           </Button>
         </div>
         
-        {/* 스냅샷 + 다운로드 버튼 */}
+        {/* 스냅샷 + 다운로드 ��튼 */}
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -726,73 +721,143 @@ export function MealCalendar() {
         </DialogContent>
       </Dialog>
 
-      {/* 구성품 교체 다이얼로그 */}
-      <Dialog open={!!editingComponent} onOpenChange={() => setEditingComponent(null)}>
-        <DialogContent className="max-w-lg bg-card">
-          <DialogHeader>
-            <DialogTitle className="text-foreground">
-              {editingComponent?.componentType === 'drink' ? '음료' : `디저트${(editingComponent?.componentIndex ?? 0) + 1}`} 교체
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground text-sm">
-              현재: {editingComponent?.currentProduct?.name || '없음'} ({editingComponent?.currentProduct?.cost?.toLocaleString() || 0}원)
-            </DialogDescription>
-          </DialogHeader>
+      {/* 구성품·FF 교체 다이얼로그 */}
+      {editingComponent && (() => {
+        const isFF = editingComponent.componentType === 'ff'
+        const isDrink = editingComponent.componentType === 'drink'
+        const dessertIdx = editingComponent.componentIndex
 
-          {/* 연동 수정 옵션 */}
-          <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-secondary/50">
-            <Checkbox 
-              id="sync-related" 
-              checked={syncToRelated} 
-              onCheckedChange={(checked) => setSyncToRelated(!!checked)} 
-            />
-            <Label htmlFor="sync-related" className="text-sm text-foreground cursor-pointer">
-              이 변경사항을 모든 가격대 및 삼각김밥 식단에 적용
-            </Label>
-          </div>
+        const labelMap: Record<string, string> = { ff: 'FF (메인 메뉴)', drink: '음료 (구성품 A)', dessert: `디저트 (구성품 ${dessertIdx === 0 ? 'B' : 'C'})` }
+        const label = labelMap[editingComponent.componentType]
 
-          {/* 제약 조건 안내 */}
-          {editingComponent && (
-            <div className="text-xs text-muted-foreground px-1">
-              {new Date(editingComponent.date).getDay() >= 3 || new Date(editingComponent.date).getDay() === 0 ? (
-                <span className="text-amber-600">수~일요일: 요거트 상품 제외됨</span>
-              ) : new Date(editingComponent.date).getDay() === 1 ? (
-                <span className="text-primary">월요일: 요거트 필수 (음료에 요거트 배정)</span>
-              ) : null}
-            </div>
-          )}
+        const dayOfWeek = new Date(editingComponent.date).getDay()
+        const isWedToSun = dayOfWeek === 0 || dayOfWeek >= 3
+        const isMonday = dayOfWeek === 1
 
-          {/* 상품 목록 */}
-          <ScrollArea className="h-64 rounded border border-border">
-            <div className="p-2 space-y-1">
-              {getAvailableProducts.map((product) => (
-                <button
-                  key={product.id}
-                  onClick={() => handleSelectProduct(product)}
-                  className={`w-full text-left p-2 rounded hover:bg-secondary transition-colors flex items-center justify-between ${
-                    editingComponent?.currentProduct?.id === product.id ? 'bg-primary/10 border border-primary/30' : ''
-                  }`}
-                >
-                  <div>
-                    <div className="text-sm font-medium text-foreground">{product.name}</div>
-                    <div className="text-xs text-muted-foreground">{product.group || '-'}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">{product.cost.toLocaleString()}원</span>
-                    {editingComponent?.currentProduct?.id === product.id && (
-                      <Check className="w-4 h-4 text-primary" />
-                    )}
-                  </div>
-                </button>
-              ))}
-              {getAvailableProducts.length === 0 && (
-                <div className="text-center py-4 text-muted-foreground text-sm">
-                  교체 가능한 상품이 없습니다
+        // 주간 FF 사용 횟수 (중복 경고용)
+        const weeklyFFCount = isFF
+          ? Object.values(mealPlanMeals).flat().reduce<Record<string, number>>((acc, meal) => {
+              if (!meal) return acc
+              Object.values(meal.compositions).forEach(comp => {
+                if (comp?.ff?.id) acc[comp.ff.id] = (acc[comp.ff.id] || 0) + 1
+              })
+              return acc
+            }, {})
+          : {}
+
+        // 현재 미리보기 원가 (선택 전 현재 상태)
+        const currentComp = currentMealPlanData.find(m => m.date === editingComponent.date)
+          ?.compositions[currentMealPlanInfo?.price || 0]
+
+        return (
+          <Dialog open onOpenChange={() => setEditingComponent(null)}>
+            <DialogContent className="max-w-lg bg-card">
+              <DialogHeader>
+                <DialogTitle className="text-foreground">{label} 교체</DialogTitle>
+                <DialogDescription className="text-muted-foreground text-sm">
+                  현재: <span className="font-medium text-foreground">{editingComponent.currentProduct?.name || '없음'}</span>
+                  {editingComponent.currentProduct && <span className="ml-1">({editingComponent.currentProduct.cost.toLocaleString()}원)</span>}
+                </DialogDescription>
+              </DialogHeader>
+
+              {/* 연동 옵션 */}
+              {isFF ? (
+                <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-secondary/50">
+                  <Checkbox id="sync-same-type" checked={syncSameType} onCheckedChange={(v) => setSyncSameType(!!v)} />
+                  <Label htmlFor="sync-same-type" className="text-sm text-foreground cursor-pointer">
+                    동일 날짜의 같은 FF 타입 전 가격대에 일괄 적용
+                  </Label>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-secondary/50">
+                  <Checkbox id="sync-related" checked={syncToRelated} onCheckedChange={(v) => setSyncToRelated(!!v)} />
+                  <Label htmlFor="sync-related" className="text-sm text-foreground cursor-pointer">
+                    이 변경사항을 모든 가격대 및 삼각김밥 식단에 적용
+                  </Label>
                 </div>
               )}
-            </div>
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
+
+              {/* 제약 안내 */}
+              <div className="flex flex-col gap-1 px-1">
+                {!isFF && isWedToSun && (
+                  <p className="text-xs text-amber-600">수~일요일: 요거트 상품이 목록에서 제외됩니다.</p>
+                )}
+                {!isFF && isMonday && (
+                  <p className="text-xs text-primary">월요일: 요거트 필수 규칙이 적용됩니다.</p>
+                )}
+                {isFF && (
+                  <p className="text-xs text-muted-foreground">원가 제한 없이 자유롭게 선택할 수 있습니다. 주 2회 초과 시 경고가 표시됩니다.</p>
+                )}
+              </div>
+
+              {/* 현재 예상 합계 원가 */}
+              {currentComp && (
+                <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-muted/50 text-sm">
+                  <span className="text-muted-foreground">현재 합계 원가</span>
+                  <span className="font-semibold text-foreground">{currentComp.totalCost.toLocaleString()}원</span>
+                  <span className="text-muted-foreground text-xs">/ 목표 {(currentMealPlanInfo ? targetCosts[currentMealPlanInfo.price] : 0).toLocaleString()}원</span>
+                </div>
+              )}
+
+              {/* 상품 목록 */}
+              <ScrollArea className="h-64 rounded border border-border">
+                <div className="p-2 space-y-1">
+                  {getAvailableProducts.length === 0 && (
+                    <div className="text-center py-4 text-muted-foreground text-sm">교체 가능한 상품이 없습니다</div>
+                  )}
+                  {getAvailableProducts.map((product) => {
+                    const isCurrent = editingComponent.currentProduct?.id === product.id
+                    const ffOverused = isFF && (weeklyFFCount[product.id] || 0) >= 2 && !isCurrent
+                    // 선택 시 예상 합계 원가
+                    const previewTotal = currentComp
+                      ? (() => {
+                          if (isFF) return product.cost + (currentComp.drink?.cost || 0) + currentComp.desserts.reduce((s, d) => s + d.cost, 0)
+                          if (isDrink) return (currentComp.ff?.cost || 0) + product.cost + currentComp.desserts.reduce((s, d) => s + d.cost, 0)
+                          const newDesserts = [...currentComp.desserts]
+                          if (dessertIdx < newDesserts.length) newDesserts[dessertIdx] = product
+                          return (currentComp.ff?.cost || 0) + (currentComp.drink?.cost || 0) + newDesserts.reduce((s, d) => s + d.cost, 0)
+                        })()
+                      : null
+                    const targetCost = currentMealPlanInfo ? targetCosts[currentMealPlanInfo.price] : 0
+                    const previewOver = previewTotal !== null && previewTotal > targetCost * 1.03
+
+                    return (
+                      <button
+                        key={product.id}
+                        onClick={() => handleSelectProduct(product)}
+                        className={`w-full text-left p-2 rounded transition-colors flex items-start justify-between gap-2 ${
+                          isCurrent
+                            ? 'bg-primary/10 border border-primary/30'
+                            : 'hover:bg-secondary'
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium text-foreground truncate">{product.name}</span>
+                            {ffOverused && (
+                              <span className="shrink-0 text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">주 2회 초과</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{product.group || product.ffType || '-'}</div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="text-sm text-muted-foreground">{product.cost.toLocaleString()}원</div>
+                          {previewTotal !== null && !isCurrent && (
+                            <div className={`text-xs ${previewOver ? 'text-destructive' : 'text-primary'}`}>
+                              합계 {previewTotal.toLocaleString()}원
+                            </div>
+                          )}
+                        </div>
+                        {isCurrent && <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              </ScrollArea>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
 
       {/* 식단 저장 다이얼로그 */}
       <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
@@ -897,7 +962,7 @@ interface MealDetailProps {
   composition: MealComposition | null
   targetCost: number
   date: string
-  onEditComponent: (componentType: 'drink' | 'dessert', componentIndex: number, currentProduct: Product | null) => void
+  onEditComponent: (componentType: 'ff' | 'drink' | 'dessert', componentIndex: number, currentProduct: Product | null) => void
 }
 
 function MealDetail({ price, composition, targetCost, date, onEditComponent }: MealDetailProps) {
@@ -945,10 +1010,16 @@ function MealDetail({ price, composition, targetCost, date, onEditComponent }: M
       {composition ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {composition.ff && (
-            <div className={`p-2 rounded border ${FF_COLOR.bg} ${FF_COLOR.border}`}>
+            <div className={`p-2 rounded border ${FF_COLOR.bg} ${FF_COLOR.border} relative group`}>
               <div className={`text-xs mb-1 ${FF_COLOR.text}`}>FF ({composition.ff.ffType})</div>
               <div className="text-sm font-medium text-foreground">{composition.ff.name}</div>
               <div className="text-xs text-muted-foreground">{composition.ff.cost.toLocaleString()}원</div>
+              <button
+                onClick={() => onEditComponent('ff', 0, composition.ff ?? null)}
+                className="absolute top-1 right-1 p-1 rounded bg-white/80 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Pencil className="w-3 h-3 text-muted-foreground" />
+              </button>
             </div>
           )}
           {composition.drink && (

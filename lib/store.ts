@@ -69,6 +69,13 @@ interface MealboxStore {
     newProduct: Product,
     syncToRelated: boolean
   ) => void
+  // FF 수정: 동일 날짜의 같은 FF타입 전 가격대에 연동
+  updateFF: (
+    date: string,
+    mealPlanName: string,
+    newFF: Product,
+    syncSameType: boolean
+  ) => void
   
   // 스냅샷 관리
   snapshots: MealPlanSnapshot[]
@@ -211,7 +218,7 @@ export const useMealboxStore = create<MealboxStore>()(
           return pool.filter(p => p.group !== '요거트' || isYogurtAllowed(dayOfWeek))
         }
 
-        // SKU 빈도 제한: 7일 내 최대 2회 사용 추적
+        // SKU 빈도 제���: 7일 내 최대 2회 사용 추적
         const makeFreqTracker = () => {
           // key: productId, value: 사용된 dayIndex 배열
           const usage = new Map<string, number[]>()
@@ -508,7 +515,7 @@ export const useMealboxStore = create<MealboxStore>()(
               const altPool = dessertProducts.filter(p =>
                 !usedTodayIds.has(p.id) &&
                 (p.group !== '요거트' || isYogurtAllowed(dayOfWeek)) &&
-                (!isFriday || p.group !== '컵라면') // 금요일엔 C 자리에 컵라면 중복 금지
+                (!isFriday || p.group !== '���라면') // 금요일엔 C 자리에 컵라면 중복 금지
               )
               if (altPool.length > 0) {
                 altPool.sort((a, b) => Math.abs(a.cost - targetC) - Math.abs(b.cost - targetC))
@@ -715,6 +722,41 @@ export const useMealboxStore = create<MealboxStore>()(
           updateSingleMeal(t.plan, t.type, t.idx)
         })
         
+        return { mealPlanMeals }
+      }),
+
+      // FF 수정: 동일 날짜 / 같은 FF타입 전 가격대 연동
+      updateFF: (date, mealPlanName, newFF, syncSameType) => set((state) => {
+        const mealPlanMeals = { ...state.mealPlanMeals }
+
+        // 같은 FF타입 식단명 추출 (예: '김밥' → ['김밥3.5','김밥4.5','김밥5.5'])
+        const ffTypePrefix = mealPlanName.replace(/[\d.]+$/, '') // 숫자+점 접미사 제거
+        const targets = syncSameType
+          ? Object.keys(mealPlanMeals).filter(k => k.startsWith(ffTypePrefix))
+          : [mealPlanName]
+
+        targets.forEach(planName => {
+          const meals = mealPlanMeals[planName]
+          if (!meals) return
+          const mealIdx = meals.findIndex(m => m.date === date)
+          if (mealIdx < 0) return
+
+          const meal = meals[mealIdx]
+          const pricePoint = planName.includes('3.5') ? 3500 : planName.includes('4.5') ? 4500 : planName.includes('5.5') ? 5500 : 6500
+          const comp = meal.compositions[pricePoint]
+          if (!comp) return
+
+          const newComp = {
+            ...comp,
+            ff: newFF,
+            totalCost: newFF.cost + (comp.drink?.cost || 0) + comp.desserts.reduce((s, d) => s + d.cost, 0),
+          }
+          meals[mealIdx] = {
+            ...meal,
+            compositions: { ...meal.compositions, [pricePoint]: newComp },
+          }
+        })
+
         return { mealPlanMeals }
       }),
 
