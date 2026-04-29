@@ -36,6 +36,7 @@ export function downloadCustomerExcel(
     { label: '다-1)샌드(음X)', plans: ['샌드3.5(음X)'] },
     { label: '라)버거', plans: ['버거3.5', '버거4.5', '버거5.5'] },
     { label: '마)도시락', plans: ['도시락4.5', '도시락5.5', '도시락6.5'] },
+    { label: '바)공장박스', plans: ['공장박스'] },
   ]
 
   for (const group of mealGroups) {
@@ -65,6 +66,7 @@ export function downloadFactoryExcel(
     { label: '다-1)샌드(음X)[공장]', plans: ['샌드3.5(음X)'] },
     { label: '라)버거[공장]', plans: ['버거3.5', '버거4.5', '버거5.5'] },
     { label: '마)도시락[공장]', plans: ['도시락4.5', '도시락5.5', '도시락6.5'] },
+    { label: '바)공장박스[공장]', plans: ['공장박스'] },
   ]
 
   for (const group of mealGroups) {

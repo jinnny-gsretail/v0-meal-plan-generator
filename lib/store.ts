@@ -658,6 +658,65 @@ export const useMealboxStore = create<MealboxStore>()(
           })
         }
 
+        // ========== 공장박스 식단 생성 ==========
+        // 월요일: 샌드 단품 (FF만)
+        // 화~일요일: "삼각)" 접두어 삼각김밥 + 김밥3.5의 음료
+        const gimbap35 = mealPlanMeals['김밥3.5']
+        const samgakFFPool = products.filter(p => p.category === 'ff' && p.ffType === '주먹밥' && p.name.startsWith('삼각)'))
+        const sandFFPool = products.filter(p => p.category === 'ff' && p.ffType === '샌드')
+        const factoryBoxCost = 964 // 고정 원가
+
+        if ((samgakFFPool.length > 0 || sandFFPool.length > 0) && gimbap35) {
+          const factoryBoxMeals: DailyMeal[] = []
+          let samgakIdx = 0
+          let sandIdx = 0
+
+          for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
+            const d = dates[dayIndex]
+            const dayOfWeek = d.getDay()
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            const isMonday = dayOfWeek === 1
+
+            if (isMonday) {
+              // 월요일: 샌드 단품 (FF만)
+              const sandFF = sandFFPool.length > 0 ? sandFFPool[sandIdx % sandFFPool.length] : undefined
+              sandIdx++
+              factoryBoxMeals.push({
+                date: dateStr,
+                compositions: {
+                  3500: {
+                    ff: sandFF,
+                    drink: undefined,
+                    desserts: [],
+                    totalCost: sandFF?.cost ?? 0,
+                  }
+                }
+              })
+            } else {
+              // 화~일요일: "삼각)" 삼각김밥 + 김밥3.5 음료
+              const samgakFF = samgakFFPool.length > 0 ? samgakFFPool[samgakIdx % samgakFFPool.length] : undefined
+              samgakIdx++
+              // 김밥3.5에서 동일 날짜의 음료 가져오기
+              const gimbap35Meal = gimbap35.find(m => m.date === dateStr)
+              const drinkFromGimbap = gimbap35Meal?.compositions[3500]?.drink
+
+              factoryBoxMeals.push({
+                date: dateStr,
+                compositions: {
+                  3500: {
+                    ff: samgakFF,
+                    drink: drinkFromGimbap,
+                    desserts: [],
+                    totalCost: (samgakFF?.cost ?? 0) + (drinkFromGimbap?.cost ?? 0),
+                  }
+                }
+              })
+            }
+          }
+
+          mealPlanMeals['공장박스'] = factoryBoxMeals
+        }
+
         set({ mealPlanMeals })
       },
       
@@ -733,9 +792,11 @@ export const useMealboxStore = create<MealboxStore>()(
           // ── 김밥 ���준 하향 전파 ──────────────────────────────
           if (srcPlan === '김밥3.5' && cType === 'drink') {
             // 김밥3.5(A) → 김밥4.5(A) → 삼각3.5(A) 연쇄, 김밥5.5(A), 샌드 전체(A)
+            // + 공장박스 (화~일요일만 - 월요일은 샌드 단품이라 음료 없음)
             t.push(drink('김밥4.5'), drink('김밥5.5'))
             t.push(drink('삼각3.5'), drink('삼각4.5'))
             t.push(drink('샌드3.5'), drink('샌드4.5'), drink('샌드5.5'))
+            t.push(drink('공장박스')) // 공장박스(화~일) 음료 연동
           }
 
           if (srcPlan === '김밥4.5' && cType === 'drink') {
@@ -802,8 +863,14 @@ export const useMealboxStore = create<MealboxStore>()(
           const mealIdx = meals.findIndex(m => m.date === date)
           if (mealIdx < 0) return
           
+          // 공장박스 월요일 체크: 월요일은 샌드 단품이라 음료가 없음
+          if (planName === '공장박스' && cType === 'drink') {
+            const dateObj = new Date(date)
+            if (dateObj.getDay() === 1) return // 월요일이면 음료 업데이트 무시
+          }
+          
           const meal = meals[mealIdx]
-          const pricePoint = planName.includes('3.5') ? 3500 : planName.includes('4.5') ? 4500 : planName.includes('5.5') ? 5500 : 6500
+          const pricePoint = planName.includes('3.5') || planName === '공장박스' ? 3500 : planName.includes('4.5') ? 4500 : planName.includes('5.5') ? 5500 : 6500
           const comp = meal.compositions[pricePoint]
           if (!comp) return
           
