@@ -29,8 +29,11 @@ export function downloadCustomerExcel(
   // 식단 그룹별 탭 구성
   const mealGroups = [
     { label: '가)김밥', plans: ['김밥3.5', '김밥4.5', '김밥5.5'] },
+    { label: '가-1)김밥(음X)', plans: ['김밥3.5(음X)'] },
     { label: '나)삼각', plans: ['삼각3.5', '삼각4.5'] },
+    { label: '나-1)삼각(음X)', plans: ['삼각3.5(음X)'] },
     { label: '다)샌드', plans: ['샌드3.5', '샌드4.5', '샌드5.5'] },
+    { label: '다-1)샌드(음X)', plans: ['샌드3.5(음X)'] },
     { label: '라)버거', plans: ['버거3.5', '버거4.5', '버거5.5'] },
     { label: '마)도시락', plans: ['도시락4.5', '도시락5.5', '도시락6.5'] },
   ]
@@ -55,8 +58,11 @@ export function downloadFactoryExcel(
 
   const mealGroups = [
     { label: '가)김밥[공장]', plans: ['김밥3.5', '김밥4.5', '김밥5.5'] },
+    { label: '가-1)김밥(음X)[공장]', plans: ['김밥3.5(음X)'] },
     { label: '나)삼각[공장]', plans: ['삼각3.5', '삼각4.5'] },
+    { label: '나-1)삼각(음X)[공장]', plans: ['삼각3.5(음X)'] },
     { label: '다)샌드[공장]', plans: ['샌드3.5', '샌드4.5', '샌드5.5'] },
+    { label: '다-1)샌드(음X)[공장]', plans: ['샌드3.5(음X)'] },
     { label: '라)버거[공장]', plans: ['버거3.5', '버거4.5', '버거5.5'] },
     { label: '마)도시락[공장]', plans: ['도시락4.5', '도시락5.5', '도시락6.5'] },
   ]

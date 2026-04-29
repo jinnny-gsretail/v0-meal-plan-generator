@@ -609,6 +609,55 @@ export const useMealboxStore = create<MealboxStore>()(
           mealPlanMeals['도시락6.5'] = meals65
         }
 
+        // ========== 음X 식단 생성 (음료 제외, 4.5 기준 B+C 연동) ==========
+        // 김밥3.5(음X): 김밥4.5의 FF + B + C (음료 제외)
+        // 샌드3.5(음X): 샌드4.5의 FF + B + C (음료 제외)
+        // 삼각3.5(음X): 삼각4.5의 FF + B + C (음료 제외)
+        const noDrinkMappings: { target: string; source: string; ffType: FFType }[] = [
+          { target: '김밥3.5(음X)', source: '김밥4.5', ffType: '김밥' },
+          { target: '샌드3.5(음X)', source: '샌드4.5', ffType: '샌드' },
+          { target: '삼각3.5(음X)', source: '삼각4.5', ffType: '주먹밥' },
+        ]
+
+        for (const mapping of noDrinkMappings) {
+          const source45 = mealPlanMeals[mapping.source]
+          const source55Name = mapping.source.replace('4.5', '5.5')
+          const source55 = mealPlanMeals[source55Name]
+          if (!source45) continue
+
+          // 해당 FF 타입 상품 목록
+          const ffPool = products.filter(p => p.category === 'ff' && p.ffType === mapping.ffType)
+
+          mealPlanMeals[mapping.target] = source45.map((meal, idx) => {
+            const comp45 = meal.compositions[4500]
+            // 5.5에서 C 디저트 가져오기
+            const comp55 = source55?.[idx]?.compositions[5500]
+            const dessertC = comp55?.desserts?.[1]
+
+            // FF: 4.5와 동일 FF 사용 (삼각의 경우 삼각김밥 FF)
+            const ff = comp45?.ff ?? ffPool[idx % ffPool.length]
+
+            // 디저트: B(4.5의 첫 디저트) + C(5.5의 두번째 디저트)
+            const desserts: Product[] = []
+            if (comp45?.desserts?.[0]) desserts.push(comp45.desserts[0])
+            if (dessertC) desserts.push(dessertC)
+
+            const totalCost = ff.cost + desserts.reduce((s, d) => s + d.cost, 0)
+
+            return {
+              date: meal.date,
+              compositions: {
+                3500: {
+                  ff,
+                  drink: undefined, // 음료 제외
+                  desserts,
+                  totalCost,
+                }
+              }
+            }
+          })
+        }
+
         set({ mealPlanMeals })
       },
       
@@ -681,7 +730,7 @@ export const useMealboxStore = create<MealboxStore>()(
           const drink  = (plan: string): T => ({ plan, type: 'drink',   idx: 0 })
           const dessert = (plan: string, idx: number): T => ({ plan, type: 'dessert', idx })
 
-          // ── 김밥 기준 하향 전파 ──────────────────────────────
+          // ── 김밥 ���준 하향 전파 ──────────────────────────────
           if (srcPlan === '김밥3.5' && cType === 'drink') {
             // 김밥3.5(A) → 김밥4.5(A) → 삼각3.5(A) 연쇄, 김밥5.5(A), 샌드 전체(A)
             t.push(drink('김밥4.5'), drink('김밥5.5'))
@@ -697,9 +746,14 @@ export const useMealboxStore = create<MealboxStore>()(
           }
           if (srcPlan === '김밥4.5' && cType === 'dessert' && cIdx === 0) {
             // 김밥4.5(B) → 삼각3.5(B), 김밥5.5(B), 삼각4.5(B), 샌드4.5/5.5(B)
+            // + 음X 식단: 김밥3.5(음X)(B=0), 샌드3.5(음X)(B=0), 삼각3.5(음X)(B=0)
             t.push(dessert('삼각3.5', 0))
             t.push(dessert('김밥5.5', 0), dessert('삼각4.5', 0))
             t.push(dessert('샌드4.5', 0), dessert('샌드5.5', 0))
+            // 음X 식단 연동 (B = desserts[0])
+            t.push(dessert('김밥3.5(음X)', 0))
+            t.push(dessert('샌드3.5(음X)', 0))
+            t.push(dessert('삼각3.5(음X)', 0))
           }
 
           if (srcPlan === '김밥5.5' && cType === 'drink') {
@@ -712,7 +766,12 @@ export const useMealboxStore = create<MealboxStore>()(
           }
           if (srcPlan === '김밥5.5' && cType === 'dessert' && cIdx === 1) {
             // 김밥5.5(C) → 삼각4.5(C), 샌드5.5(C)
+            // + 음X 식단: 김밥3.5(음X)(C=1), 샌드3.5(음X)(C=1), 삼각3.5(음X)(C=1)
             t.push(dessert('삼각4.5', 1), dessert('샌드5.5', 1))
+            // 음X 식단 연동 (C = desserts[1])
+            t.push(dessert('김밥3.5(음X)', 1))
+            t.push(dessert('샌드3.5(음X)', 1))
+            t.push(dessert('삼각3.5(음X)', 1))
           }
 
           // ── 삼각 역방향 전파 (삼각 수정 시 기준 김밥도 업데이트) ──
@@ -787,8 +846,9 @@ export const useMealboxStore = create<MealboxStore>()(
       updateFF: (date, mealPlanName, newFF, syncSameType) => set((state) => {
         const mealPlanMeals = { ...state.mealPlanMeals }
 
-        // 같은 FF타입 식단명 추출 (예: '김밥' → ['김밥3.5','김밥4.5','김밥5.5'])
-        const ffTypePrefix = mealPlanName.replace(/[\d.]+$/, '') // 숫자+점 접미사 제거
+        // 같은 FF타입 식단명 추출 (예: '김밥' → ['김밥3.5','김밥4.5','김밥5.5','김밥3.5(음X)'])
+        // 음X 포함: 접두사가 같은 모든 식단 (숫자/점/괄호 제외)
+        const ffTypePrefix = mealPlanName.replace(/[\d.()음X]+$/g, '').replace(/\(음X\)$/, '') // 숫자+점+괄호 접미사 제거
         const targets = syncSameType
           ? Object.keys(mealPlanMeals).filter(k => k.startsWith(ffTypePrefix))
           : [mealPlanName]

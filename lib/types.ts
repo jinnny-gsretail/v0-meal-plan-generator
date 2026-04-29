@@ -37,32 +37,41 @@ export const MEAL_PLAN_COST_CONFIGS: MealPlanCostConfig[] = [
   { name: '김밥3', mealPlanName: '김밥3.5', description: 'FF + 음료', defaultCost: 1486, ffType: '김밥', pricePoint: 3500 },
   { name: '김밥4', mealPlanName: '김밥4.5', description: 'FF + 음료 + 디저트1', defaultCost: 1964, ffType: '김밥', pricePoint: 4500 },
   { name: '김밥5', mealPlanName: '김밥5.5', description: 'FF + 음료 + 디저트2', defaultCost: 2430, ffType: '김밥', pricePoint: 5500 },
+  // 김밥 음X (음료 제외)
+  { name: '김밥3(음X)', mealPlanName: '김밥3.5(음X)' as MealPlanName, description: 'FF + 디저트B + 디저트C (음료 제외)', defaultCost: 1486, ffType: '김밥', pricePoint: 3500 },
   // 삼각 식단
   { name: '삼각3', mealPlanName: '삼각3.5', description: 'FF + 음료 + 디저트1', defaultCost: 1486, ffType: '주먹밥', pricePoint: 3500 },
   { name: '삼각4', mealPlanName: '삼각4.5', description: 'FF + 음료 + 디저트2', defaultCost: 1964, ffType: '주먹밥', pricePoint: 4500 },
+  // 삼각 음X (음료 제외)
+  { name: '삼각3(음X)', mealPlanName: '삼각3.5(음X)' as MealPlanName, description: 'FF + 디저트B + 디저트C (음료 제외)', defaultCost: 1486, ffType: '주먹밥', pricePoint: 3500 },
   // 버거 식단
   { name: '버거3', mealPlanName: '버거3.5', description: 'FF + 탄산음료', defaultCost: 1486, ffType: '버거', pricePoint: 3500 },
   { name: '버거4', mealPlanName: '버거4.5', description: 'FF + 탄산음료 + 디저트1', defaultCost: 1964, ffType: '버거', pricePoint: 4500 },
   { name: '버거5', mealPlanName: '버거5.5', description: 'FF + 탄산음료 + 디저트2', defaultCost: 2430, ffType: '버거', pricePoint: 5500 },
+  // 샌드 음X (음료 제외)
+  { name: '샌드3(음X)', mealPlanName: '샌드3.5(음X)' as MealPlanName, description: 'FF + 디저트B + 디저트C (음료 제외)', defaultCost: 1486, ffType: '샌드', pricePoint: 3500 },
   // 도시락 식단
   { name: '도시락4.5', mealPlanName: '도시락4.5', description: '도시락 + 음료', defaultCost: 2196, ffType: '도시락', pricePoint: 4500 },
   { name: '도시락5.5', mealPlanName: '도시락5.5', description: '도시락 + 음료 + 디저트1', defaultCost: 2694, ffType: '도시락', pricePoint: 5500 },
   { name: '도시락6.5', mealPlanName: '도시락6.5', description: '도시락 + 음료 + 디저트1', defaultCost: 3191, ffType: '도시락', pricePoint: 6500 },
 ]
 
-// 식단 표시용 (11개: 삼각5.5 제외)
-export const ALL_MEAL_PLANS: { name: MealPlanName; ffType: FFType; price: number }[] = [
+// 식단 표시용 (음X 포함)
+export const ALL_MEAL_PLANS: { name: MealPlanName | string; ffType: FFType; price: number; isNoDrink?: boolean }[] = [
   // 김밥
   { name: '김밥3.5', ffType: '김밥', price: 3500 },
   { name: '김밥4.5', ffType: '김밥', price: 4500 },
   { name: '김밥5.5', ffType: '김밥', price: 5500 },
+  { name: '김밥3.5(음X)', ffType: '김밥', price: 3500, isNoDrink: true },
   // 삼각 (5.5 제외)
   { name: '삼각3.5', ffType: '주먹밥', price: 3500 },
   { name: '삼각4.5', ffType: '주먹밥', price: 4500 },
+  { name: '삼각3.5(음X)', ffType: '주먹밥', price: 3500, isNoDrink: true },
   // 샌드
   { name: '샌드3.5', ffType: '샌드', price: 3500 },
   { name: '샌드4.5', ffType: '샌드', price: 4500 },
   { name: '샌드5.5', ffType: '샌드', price: 5500 },
+  { name: '샌드3.5(음X)', ffType: '샌드', price: 3500, isNoDrink: true },
   // 버거
   { name: '버거3.5', ffType: '버거', price: 3500 },
   { name: '버거4.5', ffType: '버거', price: 4500 },
