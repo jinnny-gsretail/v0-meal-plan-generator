@@ -658,9 +658,6 @@ export const useMealboxStore = create<MealboxStore>()(
           { target: '삼각3.5(음X)', source: '삼각4.5', ffType: '주먹밥' },
         ]
 
-        // 컵라면 풀 (음X 금요일 공용)
-        const cupRamenPool = products.filter(p => p.category === 'dessert' && p.group === '컵라면')
-
         for (const mapping of noDrinkMappings) {
           const source45 = mealPlanMeals[mapping.source]
           const source55Name = mapping.source.replace('4.5', '5.5')
@@ -669,7 +666,6 @@ export const useMealboxStore = create<MealboxStore>()(
 
           // 해당 FF 타입 상품 목록
           const ffPool = products.filter(p => p.category === 'ff' && p.ffType === mapping.ffType)
-          const isSamgakNoDrink = mapping.target === '삼각3.5(음X)'
 
           mealPlanMeals[mapping.target] = source45.map((meal, idx) => {
             const comp45 = meal.compositions[4500]
@@ -680,22 +676,26 @@ export const useMealboxStore = create<MealboxStore>()(
             // FF: 4.5와 동일 FF 사용 (삼각의 경우 삼각김밥 FF)
             const ff = comp45?.ff ?? ffPool[idx % ffPool.length]
 
-            const dateObj = new Date(meal.date)
-            const isFriday = dateObj.getDay() === 5
+            // 디저트: B(4.5의 첫 디저트) + C(5.5의 두번째 디저트)
+            const desserts: Product[] = []
+            if (comp45?.desserts?.[0]) desserts.push(comp45.desserts[0])
+            if (dessertC) desserts.push(dessertC)
 
-            let desserts: Product[] = []
+            const totalCost = ff.cost + desserts.reduce((s, d) => s + d.cost, 0)
 
-            if (isSamgakNoDrink && isFriday) {
-              // 삼각3.5(음X) 금요일: 컵라면 필수 + 디저트B
-              const cupRamen = cupRamenPool.length > 0 ? cupRamenPool[idx % cupRamenPool.length] : undefined
-              const dessertB = comp45?.desserts?.[0]
-              if (cupRamen) desserts.push(cupRamen)
-              if (dessertB) desserts.push(dessertB)
-            } else {
-              // 일반: 디저트 B + C
-              if (comp45?.desserts?.[0]) desserts.push(comp45.desserts[0])
-              if (dessertC) desserts.push(dessertC)
+            return {
+              date: meal.date,
+              compositions: {
+                3500: {
+                  ff,
+                  drink: undefined, // 음료 제외
+                  desserts,
+                  totalCost,
+                }
+              }
             }
+          })
+        }
 
             const totalCost = ff.cost + desserts.reduce((s, d) => s + d.cost, 0)
 
