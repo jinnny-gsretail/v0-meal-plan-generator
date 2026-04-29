@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { ChevronLeft, ChevronRight, AlertCircle, Download, Pencil, Check, Factory, Users } from 'lucide-react'
+import { ChevronLeft, ChevronRight, AlertCircle, Download, Pencil, Check, Factory, Users, Save, FolderOpen, Trash2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useMealboxStore } from '@/lib/store'
 import { MealComposition, ALL_MEAL_PLANS, Product } from '@/lib/types'
@@ -16,6 +16,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Input } from '@/components/ui/input'
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -44,7 +45,13 @@ export function MealCalendar() {
     startDate: storedStartDate,
     endDate: storedEndDate,
     products,
-    updateMealComponent
+    updateMealComponent,
+    snapshots,
+    snapshotStatus,
+    snapshotMessage,
+    saveSnapshot,
+    loadSnapshot,
+    deleteSnapshot
   } = useMealboxStore()
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   
@@ -60,6 +67,11 @@ export function MealCalendar() {
     currentProduct: Product | null
   } | null>(null)
   const [syncToRelated, setSyncToRelated] = useState(true)
+  
+  // 스냅샷 다이얼로그 상태
+  const [showSaveDialog, setShowSaveDialog] = useState(false)
+  const [showLoadDialog, setShowLoadDialog] = useState(false)
+  const [snapshotName, setSnapshotName] = useState('')
   
   // Ensure dates are Date objects
   const startDate = storedStartDate instanceof Date ? storedStartDate : storedStartDate ? new Date(storedStartDate) : null
@@ -344,9 +356,39 @@ export function MealCalendar() {
     })
   }
 
+  // 스냅샷 저장 핸들러
+  const handleSaveSnapshot = () => {
+    if (!snapshotName.trim()) return
+    saveSnapshot(snapshotName.trim())
+    setSnapshotName('')
+    setShowSaveDialog(false)
+  }
+
+  // 스냅샷 불러오기 핸들러
+  const handleLoadSnapshot = (id: string) => {
+    loadSnapshot(id)
+    setShowLoadDialog(false)
+  }
+
   return (
     <div className="space-y-4">
-      {/* 상단 컨트롤: 뷰 모드 토글 + 다운로드 버튼 */}
+      {/* 스냅샷 상태 메시지 */}
+      {snapshotMessage && (
+        <div className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
+          snapshotStatus === 'saving' || snapshotStatus === 'loading'
+            ? 'bg-blue-100 text-blue-700'
+            : snapshotStatus === 'success'
+            ? 'bg-green-100 text-green-700'
+            : 'bg-red-100 text-red-700'
+        }`}>
+          {(snapshotStatus === 'saving' || snapshotStatus === 'loading') && (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          )}
+          {snapshotMessage}
+        </div>
+      )}
+
+      {/* 상단 컨트롤: 뷰 모드 토글 + 스냅샷 + 다운로드 버튼 */}
       <div className="flex items-center justify-between">
         {/* 뷰 모드 토글 */}
         <div className="flex items-center gap-1 p-1 bg-secondary rounded-lg">
@@ -370,8 +412,29 @@ export function MealCalendar() {
           </Button>
         </div>
         
-        {/* 다운로드 버튼 */}
+        {/* 스냅샷 + 다운로드 버튼 */}
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSaveDialog(true)}
+            disabled={!hasData}
+            className="gap-1.5"
+          >
+            <Save className="w-3.5 h-3.5" />
+            식단 저장
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowLoadDialog(true)}
+            disabled={snapshots.length === 0}
+            className="gap-1.5"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            불러오기
+          </Button>
+          <div className="w-px bg-border" />
           <Button
             variant="outline"
             size="sm"
@@ -725,6 +788,101 @@ export function MealCalendar() {
                 <div className="text-center py-4 text-muted-foreground text-sm">
                   교체 가능한 상품이 없습니다
                 </div>
+              )}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* 식단 저장 다이얼로그 */}
+      <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+        <DialogContent className="max-w-md bg-card">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">전체 식단 저장</DialogTitle>
+            <DialogDescription className="text-muted-foreground text-sm">
+              모든 FF 타입(김밥, 샌드, 버거, 삼각, 도시락)과 모든 가격대의 식단을 저장합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="snapshot-name" className="text-sm text-foreground">스냅샷 이름</Label>
+              <Input
+                id="snapshot-name"
+                value={snapshotName}
+                onChange={(e) => setSnapshotName(e.target.value)}
+                placeholder="예: 2025년 1월 1주차"
+                className="bg-background"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowSaveDialog(false)}>
+                취소
+              </Button>
+              <Button onClick={handleSaveSnapshot} disabled={!snapshotName.trim()}>
+                <Save className="w-4 h-4 mr-1.5" />
+                저장
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 식단 불러오기 다이얼로그 */}
+      <Dialog open={showLoadDialog} onOpenChange={setShowLoadDialog}>
+        <DialogContent className="max-w-lg bg-card">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">저장된 식단 불러오기</DialogTitle>
+            <DialogDescription className="text-muted-foreground text-sm">
+              저장된 스냅샷을 선택하면 모든 식단 데이터가 복원됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-80">
+            <div className="space-y-2">
+              {snapshots.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  저장된 스냅샷이 없습니다
+                </div>
+              ) : (
+                snapshots.map((snapshot) => (
+                  <div
+                    key={snapshot.id}
+                    className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-secondary/50 transition-colors"
+                  >
+                    <div className="flex-1">
+                      <div className="font-medium text-foreground">{snapshot.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {new Date(snapshot.createdAt).toLocaleDateString('ko-KR', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        기간: {new Date(snapshot.startDate).toLocaleDateString('ko-KR')} ~ {new Date(snapshot.endDate).toLocaleDateString('ko-KR')}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => handleLoadSnapshot(snapshot.id)}
+                      >
+                        <FolderOpen className="w-3.5 h-3.5 mr-1" />
+                        불러오기
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => deleteSnapshot(snapshot.id)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </ScrollArea>

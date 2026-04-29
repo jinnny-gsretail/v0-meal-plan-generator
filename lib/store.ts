@@ -18,6 +18,18 @@ export interface MealPlanTargetCosts {
   [mealPlanName: string]: number
 }
 
+// 전체 식단 스냅샷 (저장/불러오기용)
+export interface MealPlanSnapshot {
+  id: string
+  name: string
+  createdAt: string
+  startDate: string
+  endDate: string
+  mealPlanMeals: MealPlanDailyMeals
+  mealPlanTargetCosts: MealPlanTargetCosts
+  products: Product[]
+}
+
 interface MealboxStore {
   products: Product[]
   dailyMeals: DailyMeal[]
@@ -57,6 +69,15 @@ interface MealboxStore {
     newProduct: Product,
     syncToRelated: boolean
   ) => void
+  
+  // 스냅샷 관리
+  snapshots: MealPlanSnapshot[]
+  snapshotStatus: 'idle' | 'saving' | 'loading' | 'success' | 'error'
+  snapshotMessage: string | null
+  saveSnapshot: (name: string) => void
+  loadSnapshot: (id: string) => void
+  deleteSnapshot: (id: string) => void
+  clearSnapshotStatus: () => void
 }
 
 const generateId = () => Math.random().toString(36).substring(2, 9)
@@ -87,6 +108,9 @@ export const useMealboxStore = create<MealboxStore>()(
       selectedMealPlan: null,
       startDate: null,
       endDate: null,
+      snapshots: [],
+      snapshotStatus: 'idle',
+      snapshotMessage: null,
       
       addProduct: (product) => set((state) => ({
         products: [...state.products, { ...product, id: generateId() }]
@@ -693,6 +717,81 @@ export const useMealboxStore = create<MealboxStore>()(
         
         return { mealPlanMeals }
       }),
+
+      // 전체 식단 스냅샷 저장
+      saveSnapshot: (name) => {
+        const state = get()
+        if (!state.startDate || !state.endDate) {
+          set({ snapshotStatus: 'error', snapshotMessage: '식단 기간이 설정되지 않았습니다.' })
+          return
+        }
+        if (Object.keys(state.mealPlanMeals).length === 0) {
+          set({ snapshotStatus: 'error', snapshotMessage: '저장할 식단 데이터가 없습니다.' })
+          return
+        }
+
+        set({ snapshotStatus: 'saving', snapshotMessage: '전체 식단(모든 카테고리) 저장 중...' })
+
+        const snapshot: MealPlanSnapshot = {
+          id: generateId(),
+          name,
+          createdAt: new Date().toISOString(),
+          startDate: state.startDate.toISOString(),
+          endDate: state.endDate.toISOString(),
+          mealPlanMeals: JSON.parse(JSON.stringify(state.mealPlanMeals)),
+          mealPlanTargetCosts: { ...state.mealPlanTargetCosts },
+          products: JSON.parse(JSON.stringify(state.products)),
+        }
+
+        set((prev) => ({
+          snapshots: [...prev.snapshots, snapshot],
+          snapshotStatus: 'success',
+          snapshotMessage: `전체 식단(모든 카테고리) 저장 완료: ${name}`,
+        }))
+
+        // 3초 후 상태 초기화
+        setTimeout(() => {
+          set({ snapshotStatus: 'idle', snapshotMessage: null })
+        }, 3000)
+      },
+
+      // 전체 식단 스냅샷 불러오기
+      loadSnapshot: (id) => {
+        const state = get()
+        const snapshot = state.snapshots.find(s => s.id === id)
+        if (!snapshot) {
+          set({ snapshotStatus: 'error', snapshotMessage: '스냅샷을 찾을 수 없습니다.' })
+          return
+        }
+
+        set({ snapshotStatus: 'loading', snapshotMessage: '전체 식단 복원 중...' })
+
+        // 약간의 딜레이로 로딩 상태 표시 (UX)
+        setTimeout(() => {
+          set({
+            mealPlanMeals: JSON.parse(JSON.stringify(snapshot.mealPlanMeals)),
+            mealPlanTargetCosts: { ...snapshot.mealPlanTargetCosts },
+            products: JSON.parse(JSON.stringify(snapshot.products)),
+            startDate: new Date(snapshot.startDate),
+            endDate: new Date(snapshot.endDate),
+            snapshotStatus: 'success',
+            snapshotMessage: `전체 식단 복원 완료: ${snapshot.name}`,
+          })
+
+          // 3초 후 상태 초기화
+          setTimeout(() => {
+            set({ snapshotStatus: 'idle', snapshotMessage: null })
+          }, 3000)
+        }, 500)
+      },
+
+      // 스냅샷 삭제
+      deleteSnapshot: (id) => set((state) => ({
+        snapshots: state.snapshots.filter(s => s.id !== id),
+      })),
+
+      // 상태 초기화
+      clearSnapshotStatus: () => set({ snapshotStatus: 'idle', snapshotMessage: null }),
     }),
     {
       name: 'mealbox-storage',
