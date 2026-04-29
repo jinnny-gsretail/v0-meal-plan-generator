@@ -118,33 +118,53 @@ export function MealCalendar() {
     return null
   }
   
-  // 캘린더 날짜 배열 생성 (이전 달, 현재 달, 다음 달 포함)
-  const calendarDays: { day: number; month: number; year: number; isCurrentMonth: boolean }[] = []
-  
-  // 이전 달 날짜 (첫 주 채우기)
-  for (let i = firstDay - 1; i >= 0; i--) {
-    const d = prevMonthLastDate - i
-    const m = month === 0 ? 11 : month - 1
-    const y = month === 0 ? year - 1 : year
-    calendarDays.push({ day: d, month: m, year: y, isCurrentMonth: false })
-  }
-  
-  // 현재 달 날짜
-  for (let i = 1; i <= daysInMonth; i++) {
-    calendarDays.push({ day: i, month, year, isCurrentMonth: true })
-  }
-  
-  // 다음 달 날짜 (마지막 주 채우기, 6주 고정으로 표시)
-  const remainingDays = 42 - calendarDays.length // 6주 = 42일
-  for (let i = 1; i <= remainingDays; i++) {
-    const m = month === 11 ? 0 : month + 1
-    const y = month === 11 ? year + 1 : year
-    calendarDays.push({ day: i, month: m, year: y, isCurrentMonth: false })
-  }
+  // 캘린더 날짜 배열 생성 (이전 달, 현재 달, 다음 달 포함) — 안정적인 참조를 위해 useMemo 사용
+  const calendarDays = useMemo(() => {
+    const days: { day: number; month: number; year: number; isCurrentMonth: boolean }[] = []
+    
+    // 이전 달 날짜 (첫 주 채우기)
+    for (let i = firstDay - 1; i >= 0; i--) {
+      const d = prevMonthLastDate - i
+      const m = month === 0 ? 11 : month - 1
+      const y = month === 0 ? year - 1 : year
+      days.push({ day: d, month: m, year: y, isCurrentMonth: false })
+    }
+    
+    // 현재 달 날짜
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push({ day: i, month, year, isCurrentMonth: true })
+    }
+    
+    // 다음 달 날짜 (마지막 주 채우기, 6주 고정으로 표시)
+    const remainingDays = 42 - days.length
+    for (let i = 1; i <= remainingDays; i++) {
+      const m = month === 11 ? 0 : month + 1
+      const y = month === 11 ? year + 1 : year
+      days.push({ day: i, month: m, year: y, isCurrentMonth: false })
+    }
+    
+    return days
+  }, [year, month, firstDay, prevMonthLastDate, daysInMonth])
   
   const selectedMeal = selectedDate 
     ? currentMealPlanData.find(m => m.date === selectedDate) 
     : null
+
+  // 날짜 문자열에서 식단 데이터 조회 (viewMode 반영, useMemo 내부용 순수함수)
+  const getMealForDatePure = (dateStr: string, mode: 'customer' | 'factory') => {
+    if (mode === 'factory') {
+      const calDate = new Date(dateStr)
+      calDate.setDate(calDate.getDate() + 1)
+      const deliveryDateStr = `${calDate.getFullYear()}-${String(calDate.getMonth() + 1).padStart(2, '0')}-${String(calDate.getDate()).padStart(2, '0')}`
+      return currentMealPlanData.find(m => m.date === deliveryDateStr)
+    }
+    return currentMealPlanData.find(m => m.date === dateStr)
+  }
+
+  const isInRangeDatePure = (date: Date, sd: Date | null, ed: Date | null) => {
+    if (!sd || !ed) return false
+    return date >= sd && date <= ed
+  }
 
   // 주차별 평균 원가 계산
   const weeklyStats = useMemo(() => {
@@ -160,8 +180,8 @@ export function MealCalendar() {
         const dateStr = `${dateInfo.year}-${String(dateInfo.month + 1).padStart(2, '0')}-${String(dateInfo.day).padStart(2, '0')}`
         const currentDate = new Date(dateInfo.year, dateInfo.month, dateInfo.day)
         
-        if (isInRangeDate(currentDate)) {
-          const meal = getMealForDate(dateStr)
+        if (isInRangeDatePure(currentDate, startDate, endDate)) {
+          const meal = getMealForDatePure(dateStr, viewMode)
           const composition = meal?.compositions[currentMealPlanInfo.price]
           if (composition) {
             costs.push(composition.totalCost)
@@ -176,7 +196,8 @@ export function MealCalendar() {
     }
     
     return weeks
-  }, [calendarDays, currentMealPlanData, currentMealPlanInfo, startDate, endDate])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, month, currentMealPlanData, currentMealPlanInfo, startDate, endDate, viewMode])
 
   // 월 전체 평균 원가 및 원가대비 계산
   const monthlyStats = useMemo(() => {
@@ -187,8 +208,8 @@ export function MealCalendar() {
       const dateStr = `${dateInfo.year}-${String(dateInfo.month + 1).padStart(2, '0')}-${String(dateInfo.day).padStart(2, '0')}`
       const currentDate = new Date(dateInfo.year, dateInfo.month, dateInfo.day)
       
-      if (isInRangeDate(currentDate)) {
-        const meal = getMealForDate(dateStr)
+      if (isInRangeDatePure(currentDate, startDate, endDate)) {
+        const meal = getMealForDatePure(dateStr, viewMode)
         const composition = meal?.compositions[currentMealPlanInfo.price]
         if (composition) {
           allCosts.push(composition.totalCost)
@@ -210,7 +231,8 @@ export function MealCalendar() {
       diff,
       totalCost
     }
-  }, [calendarDays, currentMealPlanData, currentMealPlanInfo, targetCosts, startDate, endDate])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, month, currentMealPlanData, currentMealPlanInfo, targetCosts, startDate, endDate, viewMode])
 
   // 선택된 식단이 없으면 안내 메시지 표시
   if (!selectedMealPlan) {
@@ -286,7 +308,8 @@ export function MealCalendar() {
     
     // 원가순 정렬
     return pool.sort((a, b) => a.cost - b.cost)
-  }, [editingComponent, products, currentMealPlanData, currentMealPlanInfo])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingComponent?.date, editingComponent?.componentType, products, currentMealPlanData, currentMealPlanInfo?.price])
 
   // 구성품 선택 핸들러
   const handleSelectProduct = (product: Product) => {
