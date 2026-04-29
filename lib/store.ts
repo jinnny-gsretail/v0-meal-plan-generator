@@ -320,7 +320,7 @@ export const useMealboxStore = create<MealboxStore>()(
         // - 버거(월요일 제외): 탄산 75% / 주스 25%
         // - 나머지: 전날과 다른 그룹 랜덤 (요거트 허용 여부 반영)
         const pickDrinkGroup = (isBurger: boolean, prevGroup: string | null, dayOfWeek: number): string => {
-          if (isMonday(dayOfWeek)) return '요거트' // 월요일은 음료를 요거트로 고정
+          if (isMonday(dayOfWeek)) return '요거트' // 월요일은 음료�� 요거트로 고정
           if (isBurger) return Math.random() < 0.75 ? '탄산' : '주스'
           const available = getAvailableDrinkGroups(dayOfWeek).filter(g => g !== prevGroup)
           const pool = available.length > 0 ? available : getAvailableDrinkGroups(dayOfWeek)
@@ -482,104 +482,51 @@ export const useMealboxStore = create<MealboxStore>()(
           }
         }
 
-        // ========== 삼각 식단 생성 ==========
-        // 삼각3.5: FF + 음료A + 디저트B       (2개 구성 - 김밥4.5와 동일)
-        // 삼각4.5: FF + 음료A + 디저트B + 디저트C (3개 구성 - 김밥5.5와 동일)
+        // ========== 삼각 식단 생성 (김밥과 동기화) ==========
+        // 삼각3.5 = 김밥4.5의 음료/디저트 그대로, FF만 주먹밥으로 교체
+        // 삼각4.5 = 김밥5.5의 음료/디저트 그대로, FF만 주먹밥으로 교체
         const samgakProducts = products.filter(p => p.category === 'ff' && p.ffType === '주먹밥')
-        if (samgakProducts.length > 0) {
-          const meals3: DailyMeal[] = []
-          const meals4: DailyMeal[] = []
-          const drinkFreq = makeFreqTracker()
-          const cupRamenFreq = makeFreqTracker() // 금요일 컵라면 빈도 추적
-          const dessertFreqs = [makeFreqTracker(), makeFreqTracker()] // B, C
-          const combinationTracker = makeCombinationTracker()
-          let prevDrinkGroup: string | null = null
-
-          for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
-            const d = dates[dayIndex]
-            const dayOfWeek = d.getDay()
-            const isFriday = dayOfWeek === 5
-            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-            const ff = samgakProducts[dayIndex % samgakProducts.length]
-            const usedTodayIds = new Set<string>([ff.id])
-
-            const target3 = getTarget('삼각3.5')
-            const target4 = getTarget('삼각4.5')
-
-            // ── 구성품 A 선택 ──
-            // 금요일: 음료 대신 디저트 [컵라면] 그룹에서 선택
-            // 나머지: 일반 음료 선택 (월요일 요거트 필수 규칙 적용)
-            let drink: Product | undefined = undefined
-            let cupRamenA: Product | undefined = undefined
-            let usedDessertGroups: string[] = []
-            let baseCostAfterA = ff.cost
-
-            if (isFriday) {
-              const cupRamenPool = dessertProducts.filter(p => p.group === '컵라면')
-              const fallbackPool = cupRamenPool.length > 0 ? cupRamenPool : dessertProducts
-              cupRamenA = selectProduct(fallbackPool, target3 - ff.cost, cupRamenFreq, dayIndex, usedTodayIds)
-              if (cupRamenA) { cupRamenFreq.markUsed(cupRamenA.id, dayIndex); usedTodayIds.add(cupRamenA.id) }
-              usedDessertGroups = ['컵라면'] // A가 컵라면이므로 B, C에서 컵라면 제외
-              baseCostAfterA = ff.cost + (cupRamenA?.cost ?? 0)
-            } else {
-              const drinkGroup = pickDrinkGroup(false, prevDrinkGroup, dayOfWeek)
-              prevDrinkGroup = drinkGroup
-              const drinkPool = poolByGroups(drinkProducts, [drinkGroup], dayOfWeek)
-              drink = selectProduct(drinkPool, target3 - ff.cost, drinkFreq, dayIndex, usedTodayIds)
-              if (drink) { drinkFreq.markUsed(drink.id, dayIndex); usedTodayIds.add(drink.id) }
-              usedDessertGroups = [drinkGroup]
-              baseCostAfterA = ff.cost + (drink?.cost ?? 0)
-            }
-
-            // 구성품 B (디저트1) - 삼각3.5 목표원가 달성
-            const targetB = target3 - baseCostAfterA
-            const dGroupB = pickDessertGroup(usedDessertGroups, dayOfWeek)
-            usedDessertGroups.push(dGroupB)
-            const dPoolB = poolByGroups(dessertProducts, [dGroupB], dayOfWeek)
-            const dessertB = selectProduct(dPoolB, targetB, dessertFreqs[0], dayIndex, usedTodayIds)
-            if (dessertB) { dessertFreqs[0].markUsed(dessertB.id, dayIndex); usedTodayIds.add(dessertB.id) }
-
-            // 금요일은 컵라면(A)을 desserts 배열 앞에 넣고, 나머지 디저트를 뒤에 추가
-            const desserts35 = isFriday
-              ? (cupRamenA ? [cupRamenA, ...(dessertB ? [dessertB] : [])] : dessertB ? [dessertB] : [])
-              : (dessertB ? [dessertB] : [])
-            const totalCost3 = ff.cost + (isFriday ? 0 : (drink?.cost ?? 0)) + desserts35.reduce((s, x) => s + x.cost, 0)
-
-            // 구성품 C (디저트2) - 삼각4.5 목표원가 달성
-            const targetC = target4 - totalCost3
-            const dGroupC = pickDessertGroup(usedDessertGroups, dayOfWeek)
-            usedDessertGroups.push(dGroupC)
-            const dPoolC = poolByGroups(dessertProducts, [dGroupC], dayOfWeek)
-            const dessertC = selectProduct(dPoolC, targetC, dessertFreqs[1], dayIndex, usedTodayIds)
-            if (dessertC) { dessertFreqs[1].markUsed(dessertC.id, dayIndex); usedTodayIds.add(dessertC.id) }
-
-            const desserts45 = dessertC ? [...desserts35, dessertC] : [...desserts35]
-            const totalCost4 = ff.cost + (isFriday ? 0 : (drink?.cost ?? 0)) + desserts45.reduce((s, x) => s + x.cost, 0)
-
-            // 조합 고유성 체크
-            const comboIds = [
-              ...(isFriday ? [] : [drink?.id ?? '']),
-              ...desserts45.map(x => x.id)
-            ].filter(Boolean)
-            if (!combinationTracker.isUnique(comboIds) && desserts45.length > 0) {
-              const altPool = dessertProducts.filter(p =>
-                !usedTodayIds.has(p.id) &&
-                (p.group !== '요거트' || isYogurtAllowed(dayOfWeek)) &&
-                (!isFriday || p.group !== '���라면') // 금요일엔 C 자리에 컵라면 중복 금지
-              )
-              if (altPool.length > 0) {
-                altPool.sort((a, b) => Math.abs(a.cost - targetC) - Math.abs(b.cost - targetC))
-                desserts45[desserts45.length - 1] = altPool[0]
+        if (samgakProducts.length > 0 && mealPlanMeals['김밥4.5'] && mealPlanMeals['김밥5.5']) {
+          // 삼각3.5 ← 김밥4.5 기반, FF만 주먹밥으로 교체
+          mealPlanMeals['삼각3.5'] = mealPlanMeals['김밥4.5'].map((meal, idx) => {
+            const samgakFF = samgakProducts[idx % samgakProducts.length]
+            const comp = meal.compositions[4500]
+            const desserts = comp?.desserts ?? []
+            const isFriday = new Date(meal.date).getDay() === 5
+            // 금요일: 음료 대신 컵라면을 desserts[0]에 포함 (김밥4.5에서 이미 처리됨)
+            const totalCost = samgakFF.cost + (comp?.drink?.cost ?? 0) + desserts.reduce((s, d) => s + d.cost, 0)
+            return {
+              date: meal.date,
+              compositions: {
+                3500: {
+                  ff: samgakFF,
+                  drink: isFriday ? undefined : comp?.drink,
+                  desserts,
+                  totalCost,
+                }
               }
             }
-            combinationTracker.mark(comboIds)
+          })
 
-            // 금요일: drink=undefined, 컵라면은 desserts 배열에 포함
-            meals3.push({ date: dateStr, compositions: { 3500: { ff, drink: isFriday ? undefined : drink, desserts: desserts35, totalCost: totalCost3 } } })
-            meals4.push({ date: dateStr, compositions: { 4500: { ff, drink: isFriday ? undefined : drink, desserts: desserts45, totalCost: totalCost4 } } })
-          }
-          mealPlanMeals['삼각3.5'] = meals3
-          mealPlanMeals['삼각4.5'] = meals4
+          // 삼각4.5 ← 김밥5.5 기반, FF만 주먹밥으로 교체
+          mealPlanMeals['삼각4.5'] = mealPlanMeals['김밥5.5'].map((meal, idx) => {
+            const samgakFF = samgakProducts[idx % samgakProducts.length]
+            const comp = meal.compositions[5500]
+            const desserts = comp?.desserts ?? []
+            const isFriday = new Date(meal.date).getDay() === 5
+            const totalCost = samgakFF.cost + (comp?.drink?.cost ?? 0) + desserts.reduce((s, d) => s + d.cost, 0)
+            return {
+              date: meal.date,
+              compositions: {
+                4500: {
+                  ff: samgakFF,
+                  drink: isFriday ? undefined : comp?.drink,
+                  desserts,
+                  totalCost,
+                }
+              }
+            }
+          })
         }
 
         // ========== 버거 식단 생성 ==========

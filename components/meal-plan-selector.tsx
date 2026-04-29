@@ -19,7 +19,10 @@ export function MealPlanSelector() {
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-11 gap-2">
         {ALL_MEAL_PLANS.map((plan) => {
           // FF 타입별 색상 지정
-          const colorClass = plan.ffType === '김밥' 
+          const isFreeFormat = plan.name === '프리포맷'
+          const colorClass = isFreeFormat
+            ? 'hover:border-violet-500/50 data-[selected=true]:bg-violet-600 data-[selected=true]:border-violet-600'
+            : plan.ffType === '김밥' 
             ? 'hover:border-green-500/50 data-[selected=true]:bg-green-600 data-[selected=true]:border-green-600'
             : plan.ffType === '주먹밥'
             ? 'hover:border-amber-500/50 data-[selected=true]:bg-amber-600 data-[selected=true]:border-amber-600'

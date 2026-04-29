@@ -84,6 +84,8 @@ export const ALL_MEAL_PLANS: { name: MealPlanName | string; ffType: FFType; pric
   { name: '도시락6.5', ffType: '도시락', price: 6500 },
   // 공장박스 (특수)
   { name: '공장박스', ffType: '샌드', price: 3500 },
+  // 프리포맷 (자유 편집)
+  { name: '프리포맷', ffType: '김밥', price: 0 },
 ]
 
 // 요일별 음료 그룹 매핑 (0: 일요일, 1: 월요일, ...)
