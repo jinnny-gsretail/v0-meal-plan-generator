@@ -39,6 +39,7 @@ export function MealCalendar() {
     selectedMonth: storedMonth, 
     setSelectedMonth, 
     mealPlanMeals, 
+    dosirakSets,
     targetCosts,
     mealPlanTargetCosts,
     selectedMealPlan,
@@ -47,6 +48,7 @@ export function MealCalendar() {
     products,
     updateMealComponent,
     updateFF,
+    updateDosirakSet,
     snapshots,
     snapshotStatus,
     snapshotMessage,
@@ -75,6 +77,18 @@ export function MealCalendar() {
   const [showSaveDialog, setShowSaveDialog] = useState(false)
   const [showLoadDialog, setShowLoadDialog] = useState(false)
   const [snapshotName, setSnapshotName] = useState('')
+  
+  // 도시락 조합 수정 상태
+  const [editingDosirakSet, setEditingDosirakSet] = useState<{
+    pricePoint: number
+    setNumber: number
+    componentType: 'ff' | 'drink' | 'dessert'
+    componentIndex: number
+    currentProduct: Product | null
+  } | null>(null)
+  
+  // 도시락 여부 체크
+  const isDosirak = selectedMealPlan?.startsWith('도시락')
   
   // Ensure dates are Date objects
   const startDate = storedStartDate instanceof Date ? storedStartDate : storedStartDate ? new Date(storedStartDate) : null
@@ -263,8 +277,12 @@ export function MealCalendar() {
     )
   }
 
-  // 식단 데이터가 없으면 생성 안내
-  if (currentMealPlanData.length === 0) {
+  // 도시락: dosirakSets 데이터 확인
+  const currentDosirakPrice = isDosirak && currentMealPlanInfo ? currentMealPlanInfo.price : 0
+  const currentDosirakSets = isDosirak ? dosirakSets[currentDosirakPrice] || [] : []
+
+  // 식단 데이터가 없으면 생성 안내 (도시락은 별도 체크)
+  if (!isDosirak && currentMealPlanData.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card p-8 text-center">
         <p className="text-muted-foreground">
@@ -273,15 +291,25 @@ export function MealCalendar() {
       </div>
     )
   }
+  
+  if (isDosirak && currentDosirakSets.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-8 text-center">
+        <p className="text-muted-foreground">
+          도시락 조합이 생성되지 않았습니다. 상품을 등록하고 &apos;식단 자동 생성&apos; 버튼을 클릭해주세요.
+        </p>
+      </div>
+    )
+  }
 
   const handleDownloadCustomer = () => {
     if (!startDate || !endDate) return
-    downloadCustomerExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate)
+    downloadCustomerExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets)
   }
 
   const handleDownloadFactory = () => {
     if (!startDate || !endDate) return
-    downloadFactoryExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate)
+    downloadFactoryExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets)
   }
 
   const hasData = startDate && endDate && Object.keys(mealPlanMeals).length > 0
@@ -367,6 +395,47 @@ export function MealCalendar() {
     loadSnapshot(id)
     setShowLoadDialog(false)
   }
+  
+  // 도시락 조합 수정 핸들러
+  const handleEditDosirakComponent = (
+    pricePoint: number,
+    setNumber: number,
+    componentType: 'ff' | 'drink' | 'dessert',
+    componentIndex: number,
+    currentProduct: Product | null
+  ) => {
+    setEditingDosirakSet({ pricePoint, setNumber, componentType, componentIndex, currentProduct })
+  }
+  
+  const handleSelectDosirakProduct = (product: Product) => {
+    if (!editingDosirakSet) return
+    const { pricePoint, setNumber, componentType, componentIndex } = editingDosirakSet
+    const currentSet = dosirakSets[pricePoint]?.find(s => s.setNumber === setNumber)
+    if (!currentSet) return
+    
+    if (componentType === 'ff') {
+      updateDosirakSet(pricePoint, setNumber, { ff: product })
+    } else if (componentType === 'drink') {
+      updateDosirakSet(pricePoint, setNumber, { drink: product })
+    } else {
+      const newDesserts = [...currentSet.desserts]
+      if (componentIndex < newDesserts.length) {
+        newDesserts[componentIndex] = product
+      }
+      updateDosirakSet(pricePoint, setNumber, { desserts: newDesserts })
+    }
+    setEditingDosirakSet(null)
+  }
+  
+  // 도시락 5개 조합 평균 원가 계산
+  const dosirakStats = useMemo(() => {
+    if (!isDosirak || currentDosirakSets.length === 0) return null
+    const costs = currentDosirakSets.map(s => s.totalCost)
+    const avgCost = Math.round(costs.reduce((a, b) => a + b, 0) / costs.length)
+    const targetCost = mealPlanTargetCosts[selectedMealPlan || ''] ?? targetCosts[currentDosirakPrice]
+    const diff = avgCost - targetCost
+    return { avgCost, targetCost, diff, costs }
+  }, [isDosirak, currentDosirakSets, mealPlanTargetCosts, selectedMealPlan, targetCosts, currentDosirakPrice])
 
   return (
     <div className="space-y-4">
@@ -388,27 +457,34 @@ export function MealCalendar() {
 
       {/* 상단 컨트롤: 뷰 모드 토글 + 스냅샷 + 다운로드 버튼 */}
       <div className="flex items-center justify-between">
-        {/* 뷰 모드 토글 */}
-        <div className="flex items-center gap-1 p-1 bg-secondary rounded-lg">
-          <Button
-            variant={viewMode === 'customer' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('customer')}
-            className="gap-1.5 h-8"
-          >
-            <Users className="w-3.5 h-3.5" />
-            고객 수령일
-          </Button>
-          <Button
-            variant={viewMode === 'factory' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('factory')}
-            className="gap-1.5 h-8"
-          >
-            <Factory className="w-3.5 h-3.5" />
-            공장 생산일
-          </Button>
-        </div>
+        {/* 뷰 모드 토글 - 도시락은 날짜 개념이 없어 비활성화 */}
+        {isDosirak ? (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-secondary/50 rounded-lg text-sm text-muted-foreground">
+            <Factory className="w-4 h-4" />
+            상시 생산 (날짜 무관)
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 p-1 bg-secondary rounded-lg">
+            <Button
+              variant={viewMode === 'customer' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('customer')}
+              className="gap-1.5 h-8"
+            >
+              <Users className="w-3.5 h-3.5" />
+              고객 수령일
+            </Button>
+            <Button
+              variant={viewMode === 'factory' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('factory')}
+              className="gap-1.5 h-8"
+            >
+              <Factory className="w-3.5 h-3.5" />
+              공장 생산일
+            </Button>
+          </div>
+        )}
         
         {/* 스냅샷 + 다운로드 ��튼 */}
         <div className="flex gap-2">
@@ -456,6 +532,119 @@ export function MealCalendar() {
         </div>
       </div>
 
+      {/* 도시락: 5개 고정 조합 카드 UI */}
+      {isDosirak ? (
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-base font-semibold text-foreground">
+                  {selectedMealPlan} - 5개 고정 조합
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  목표 원가: {dosirakStats?.targetCost.toLocaleString()}원
+                </p>
+              </div>
+              
+              <div className="grid grid-cols-5 gap-3">
+                {currentDosirakSets.map((set) => {
+                  const isOverBudget = dosirakStats && set.totalCost > dosirakStats.targetCost * 1.03
+                  return (
+                    <div
+                      key={set.setNumber}
+                      className={`p-3 rounded-lg border ${isOverBudget ? 'border-destructive/50 bg-destructive/5' : 'border-border bg-card'}`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-semibold text-foreground">조합 {set.setNumber}</span>
+                        <span className={`text-xs font-medium ${isOverBudget ? 'text-destructive' : 'text-primary'}`}>
+                          {set.totalCost.toLocaleString()}원
+                        </span>
+                      </div>
+                      
+                      {/* FF */}
+                      {set.ff && (
+                        <div className={`p-2 rounded border mb-2 ${FF_COLOR.bg} ${FF_COLOR.border} relative group`}>
+                          <div className={`text-[10px] ${FF_COLOR.text}`}>도시락</div>
+                          <div className="text-xs font-medium text-foreground truncate">{set.ff.name}</div>
+                          <div className="text-[10px] text-muted-foreground">{set.ff.cost.toLocaleString()}원</div>
+                          <button
+                            onClick={() => handleEditDosirakComponent(currentDosirakPrice, set.setNumber, 'ff', 0, set.ff ?? null)}
+                            className="absolute top-1 right-1 p-0.5 rounded bg-white/80 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Pencil className="w-2.5 h-2.5 text-muted-foreground" />
+                          </button>
+                        </div>
+                      )}
+                      
+                      {/* 음료 */}
+                      {set.drink && (
+                        <div className={`p-2 rounded border mb-2 ${DRINK_COLOR.bg} ${DRINK_COLOR.border} relative group`}>
+                          <div className={`text-[10px] ${DRINK_COLOR.text}`}>음료</div>
+                          <div className="text-xs font-medium text-foreground truncate">{set.drink.name}</div>
+                          <div className="text-[10px] text-muted-foreground">{set.drink.cost.toLocaleString()}원</div>
+                          <button
+                            onClick={() => handleEditDosirakComponent(currentDosirakPrice, set.setNumber, 'drink', 0, set.drink ?? null)}
+                            className="absolute top-1 right-1 p-0.5 rounded bg-white/80 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Pencil className="w-2.5 h-2.5 text-muted-foreground" />
+                          </button>
+                        </div>
+                      )}
+                      
+                      {/* 디저트 */}
+                      {set.desserts.map((dessert, dIdx) => {
+                        const color = DESSERT_GROUP_COLORS[dessert.group || ''] || getDefaultDessertColor()
+                        return (
+                          <div key={dIdx} className={`p-2 rounded border mb-1 ${color.bg} ${color.border} relative group`}>
+                            <div className={`text-[10px] ${color.text}`}>{dessert.group || '디저트'}</div>
+                            <div className="text-xs font-medium text-foreground truncate">{dessert.name}</div>
+                            <div className="text-[10px] text-muted-foreground">{dessert.cost.toLocaleString()}원</div>
+                            <button
+                              onClick={() => handleEditDosirakComponent(currentDosirakPrice, set.setNumber, 'dessert', dIdx, dessert)}
+                              className="absolute top-1 right-1 p-0.5 rounded bg-white/80 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <Pencil className="w-2.5 h-2.5 text-muted-foreground" />
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+          
+          {/* 도시락 통계 사이드바 */}
+          <div className="w-48 rounded-lg border border-border bg-card p-4">
+            <h3 className="text-sm font-semibold text-foreground mb-3">5개 세트 통계</h3>
+            {dosirakStats && (
+              <div className="space-y-3">
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">평균 원가</div>
+                  <div className={`text-lg font-semibold ${dosirakStats.diff > 0 ? 'text-destructive' : 'text-primary'}`}>
+                    {dosirakStats.avgCost.toLocaleString()}원
+                  </div>
+                  <div className={`text-xs ${dosirakStats.diff > 0 ? 'text-destructive' : 'text-primary'}`}>
+                    목표 대비 {dosirakStats.diff >= 0 ? '+' : ''}{dosirakStats.diff.toLocaleString()}원
+                  </div>
+                </div>
+                <div className="border-t border-border pt-3">
+                  <div className="text-xs text-muted-foreground mb-2">개별 원가</div>
+                  {currentDosirakSets.map((set, idx) => (
+                    <div key={idx} className="flex justify-between text-xs mb-1">
+                      <span className="text-muted-foreground">조합 {set.setNumber}</span>
+                      <span className={set.totalCost > dosirakStats.targetCost * 1.03 ? 'text-destructive' : 'text-foreground'}>
+                        {set.totalCost.toLocaleString()}원
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
       <div className="flex gap-4">
         {/* 캘린더 */}
         <div className="flex-1 rounded-lg border border-border bg-card">
@@ -658,8 +847,10 @@ export function MealCalendar() {
         </div>
       </div>
       
-      {/* 월 전체 통계 (하단) */}
-      {monthlyStats && (
+      )}
+
+      {/* 월 전체 통계 (하단) - 도시락이 아닐 때만 */}
+      {!isDosirak && monthlyStats && (
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
             <div>
@@ -903,6 +1094,59 @@ export function MealCalendar() {
           </Dialog>
         )
       })()}
+
+      {/* 도시락 조합 수정 다이얼로그 */}
+      {editingDosirakSet && (
+        <Dialog open={!!editingDosirakSet} onOpenChange={() => setEditingDosirakSet(null)}>
+          <DialogContent className="max-w-md bg-card">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">
+                조합 {editingDosirakSet.setNumber} - {
+                  editingDosirakSet.componentType === 'ff' ? '도시락' :
+                  editingDosirakSet.componentType === 'drink' ? '음료' : '디저트'
+                } 변경
+              </DialogTitle>
+              <DialogDescription className="text-muted-foreground text-sm">
+                교체할 상품을 선택하세요.
+              </DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="max-h-80">
+              <div className="space-y-1 pr-2">
+                {(() => {
+                  const { componentType } = editingDosirakSet
+                  let pool: Product[] = []
+                  if (componentType === 'ff') {
+                    pool = products.filter(p => p.category === 'ff' && p.ffType === '도시락')
+                  } else if (componentType === 'drink') {
+                    pool = products.filter(p => p.category === 'drink')
+                  } else {
+                    pool = products.filter(p => p.category === 'dessert')
+                  }
+                  return pool.sort((a, b) => a.cost - b.cost).map(product => {
+                    const isCurrent = product.id === editingDosirakSet.currentProduct?.id
+                    return (
+                      <button
+                        key={product.id}
+                        onClick={() => handleSelectDosirakProduct(product)}
+                        className={`w-full text-left p-2 rounded transition-colors flex items-start justify-between gap-2 ${
+                          isCurrent ? 'bg-primary/10 border border-primary/30' : 'hover:bg-secondary'
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium text-foreground truncate">{product.name}</span>
+                          <div className="text-xs text-muted-foreground">{product.group || product.ffType || '-'}</div>
+                        </div>
+                        <div className="shrink-0 text-sm text-muted-foreground">{product.cost.toLocaleString()}원</div>
+                        {isCurrent && <Check className="w-4 h-4 text-primary shrink-0" />}
+                      </button>
+                    )
+                  })
+                })()}
+              </div>
+            </ScrollArea>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* 식단 저장 다이얼로그 */}
       <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>

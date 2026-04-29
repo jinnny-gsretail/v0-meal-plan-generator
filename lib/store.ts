@@ -18,6 +18,19 @@ export interface MealPlanTargetCosts {
   [mealPlanName: string]: number
 }
 
+// 도시락 5개 고정 조합 (날짜 대신 조합 번호 기반)
+export interface DosirakSet {
+  setNumber: number // 1~5
+  ff?: Product
+  drink?: Product
+  desserts: Product[]
+  totalCost: number
+}
+
+export interface DosirakSets {
+  [pricePoint: number]: DosirakSet[] // 4500, 5500, 6500 각각 5개씩
+}
+
 // 전체 식단 스냅샷 (저장/불러오기용)
 export interface MealPlanSnapshot {
   id: string
@@ -28,12 +41,14 @@ export interface MealPlanSnapshot {
   mealPlanMeals: MealPlanDailyMeals
   mealPlanTargetCosts: MealPlanTargetCosts
   products: Product[]
+  dosirakSets?: DosirakSets // 도시락 5개 조합
 }
 
 interface MealboxStore {
   products: Product[]
   dailyMeals: DailyMeal[]
   mealPlanMeals: MealPlanDailyMeals
+  dosirakSets: DosirakSets // 도시락 5개 고정 조합
   targetCosts: { [price: number]: number } // 기존 호환용
   mealPlanTargetCosts: MealPlanTargetCosts // 식단별 목표원가
   selectedMonth: Date
@@ -77,6 +92,13 @@ interface MealboxStore {
     syncSameType: boolean
   ) => void
   
+  // 도시락 조합 수정
+  updateDosirakSet: (
+    pricePoint: number,
+    setNumber: number,
+    updates: Partial<Omit<DosirakSet, 'setNumber'>>
+  ) => void
+  
   // 스냅샷 관리
   snapshots: MealPlanSnapshot[]
   snapshotStatus: 'idle' | 'saving' | 'loading' | 'success' | 'error'
@@ -104,6 +126,7 @@ export const useMealboxStore = create<MealboxStore>()(
       products: [],
       dailyMeals: [],
       mealPlanMeals: {},
+      dosirakSets: {}, // 도시락 5개 고정 조합
       targetCosts: {
         3500: 1486,
         4500: 1964,
@@ -547,67 +570,83 @@ export const useMealboxStore = create<MealboxStore>()(
           Object.assign(mealPlanMeals, meals)
         }
 
-        // ========== 도시락 식단 생성 ==========
+        // ========== 도시락 5개 고정 조합 생성 ==========
+        // 날짜 기반이 아닌 5개 세트 기반 독립 시스템
         const dosirakProducts = products.filter(p => p.category === 'ff' && p.ffType === '도시락')
+        const dosirakSets: DosirakSets = { 4500: [], 5500: [], 6500: [] }
+
         if (dosirakProducts.length > 0) {
-          const meals45: DailyMeal[] = []
-          const meals55: DailyMeal[] = []
-          const meals65: DailyMeal[] = []
+          const target45 = getTarget('도시락4.5')
+          const target55 = getTarget('도시락5.5')
+          const target65 = getTarget('도시락6.5')
 
-          const drinkFreq = makeFreqTracker()
-          const dessertFreq55 = makeFreqTracker()
-          const dessertFreq65 = makeFreqTracker()
-          let prevDrinkGroup: string | null = null
-
-          for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
-            const d = dates[dayIndex]
-            const dayOfWeek = d.getDay()
-            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-            const ff = dosirakProducts[dayIndex % dosirakProducts.length]
-            const usedTodayIds = new Set<string>([ff.id])
-
-            const target45 = getTarget('도시락4.5')
-            const target55 = getTarget('도시락5.5')
-            const target65 = getTarget('도시락6.5')
-
-            // 음료
-            const drinkGroup = pickDrinkGroup(false, prevDrinkGroup, dayOfWeek)
-            prevDrinkGroup = drinkGroup
-            const drinkPool = poolByGroups(drinkProducts, [drinkGroup], dayOfWeek)
-            const drink = selectProduct(drinkPool, target45 - ff.cost, drinkFreq, dayIndex, usedTodayIds)
-            if (drink) { drinkFreq.markUsed(drink.id, dayIndex); usedTodayIds.add(drink.id) }
-
-            const totalCost45 = ff.cost + (drink?.cost ?? 0)
-            meals45.push({ date: dateStr, compositions: { 4500: { ff, drink, desserts: [], totalCost: totalCost45 } } })
-
-            // 도시락5.5: + 디저트1
-            const usedDessertGroups55 = [drinkGroup]
-            const dGroup55 = pickDessertGroup(usedDessertGroups55, dayOfWeek)
-            const dPool55 = poolByGroups(dessertProducts, [dGroup55], dayOfWeek)
-            const dessert55 = selectProduct(dPool55, target55 - totalCost45, dessertFreq55, dayIndex, usedTodayIds)
-            if (dessert55) { dessertFreq55.markUsed(dessert55.id, dayIndex); usedTodayIds.add(dessert55.id) }
-
-            const desserts55 = dessert55 ? [dessert55] : []
-            const totalCost55 = totalCost45 + desserts55.reduce((s, x) => s + x.cost, 0)
-            meals55.push({ date: dateStr, compositions: { 5500: { ff, drink, desserts: desserts55, totalCost: totalCost55 } } })
-
-            // 도시락6.5: + 디저트1 (다른 상품, 목표원가 다름)
-            const usedDessertGroups65 = [drinkGroup]
-            const dGroup65 = pickDessertGroup(usedDessertGroups65, dayOfWeek)
-            const dPool65 = poolByGroups(dessertProducts.filter(p => p.id !== dessert55?.id), [dGroup65], dayOfWeek)
-            const fallbackPool65 = dPool65.length > 0 ? dPool65 : dessertProducts.filter(p => !usedTodayIds.has(p.id))
-            const dessert65 = selectProduct(fallbackPool65, target65 - totalCost45, dessertFreq65, dayIndex, usedTodayIds)
-            if (dessert65) dessertFreq65.markUsed(dessert65.id, dayIndex)
-
-            const desserts65 = dessert65 ? [dessert65] : desserts55
-            const totalCost65 = totalCost45 + desserts65.reduce((s, x) => s + x.cost, 0)
-            meals65.push({ date: dateStr, compositions: { 6500: { ff, drink, desserts: desserts65, totalCost: totalCost65 } } })
+          // 중복 없이 5개 FF 선택 (부족하면 순환)
+          const selectedFFs: Product[] = []
+          const shuffledFFs = [...dosirakProducts].sort(() => Math.random() - 0.5)
+          for (let i = 0; i < 5; i++) {
+            selectedFFs.push(shuffledFFs[i % shuffledFFs.length])
           }
 
-          mealPlanMeals['도시락4.5'] = meals45
-          mealPlanMeals['도시락5.5'] = meals55
-          mealPlanMeals['도시락6.5'] = meals65
+          // 5개 그룹 순환 배열 (음료/디저트)
+          const drinkGroupCycle = ['건강', '주스', '탄산', '차', '건강']
+          const dessertGroupCycle = ['단백질', '프레시', '탄수화물', '당류', '단백질']
+
+          for (let setNum = 1; setNum <= 5; setNum++) {
+            const ff = selectedFFs[setNum - 1]
+            const usedIds = new Set<string>([ff.id])
+
+            // 음료 선택
+            const drinkGroup = drinkGroupCycle[setNum - 1]
+            const drinkPool = drinkProducts.filter(p => p.group === drinkGroup)
+            const fallbackDrinkPool = drinkPool.length > 0 ? drinkPool : drinkProducts
+            const drink = fallbackDrinkPool.reduce((best, p) => {
+              if (usedIds.has(p.id)) return best
+              const diff = Math.abs(p.cost - (target45 - ff.cost))
+              if (!best || diff < Math.abs(best.cost - (target45 - ff.cost))) return p
+              return best
+            }, undefined as Product | undefined)
+            if (drink) usedIds.add(drink.id)
+
+            const totalCost45 = ff.cost + (drink?.cost ?? 0)
+            dosirakSets[4500].push({ setNumber: setNum, ff, drink, desserts: [], totalCost: totalCost45 })
+
+            // 5.5: + 디저트1
+            const dessertGroup55 = dessertGroupCycle[setNum - 1]
+            const dessertPool55 = dessertProducts.filter(p => p.group === dessertGroup55 && !usedIds.has(p.id))
+            const fallbackDessertPool55 = dessertPool55.length > 0 ? dessertPool55 : dessertProducts.filter(p => !usedIds.has(p.id))
+            const dessert55 = fallbackDessertPool55.reduce((best, p) => {
+              const diff = Math.abs(p.cost - (target55 - totalCost45))
+              if (!best || diff < Math.abs(best.cost - (target55 - totalCost45))) return p
+              return best
+            }, undefined as Product | undefined)
+            if (dessert55) usedIds.add(dessert55.id)
+
+            const desserts55 = dessert55 ? [dessert55] : []
+            const totalCost55 = totalCost45 + desserts55.reduce((s, d) => s + d.cost, 0)
+            dosirakSets[5500].push({ setNumber: setNum, ff, drink, desserts: desserts55, totalCost: totalCost55 })
+
+            // 6.5: + 디저트1 (다른 상품)
+            const nextGroup = dessertGroupCycle[(setNum) % 5]
+            const dessertPool65 = dessertProducts.filter(p => p.group === nextGroup && !usedIds.has(p.id))
+            const fallbackDessertPool65 = dessertPool65.length > 0 ? dessertPool65 : dessertProducts.filter(p => !usedIds.has(p.id))
+            const dessert65 = fallbackDessertPool65.reduce((best, p) => {
+              const diff = Math.abs(p.cost - (target65 - totalCost45))
+              if (!best || diff < Math.abs(best.cost - (target65 - totalCost45))) return p
+              return best
+            }, undefined as Product | undefined)
+
+            const desserts65 = dessert65 ? [dessert65] : desserts55
+            const totalCost65 = totalCost45 + desserts65.reduce((s, d) => s + d.cost, 0)
+            dosirakSets[6500].push({ setNumber: setNum, ff, drink, desserts: desserts65, totalCost: totalCost65 })
+          }
         }
+
+        // 도시락은 캘린더용 mealPlanMeals에서 제외 (별도 dosirakSets로 관리)
+        delete mealPlanMeals['도시락4.5']
+        delete mealPlanMeals['도시락5.5']
+        delete mealPlanMeals['도시락6.5']
+
+        set({ dosirakSets })
 
         // ========== 음X 식단 생성 (음료 제외, 4.5 기준 B+C 연동) ==========
         // 김밥3.5(음X): 김밥4.5의 FF + B + C (음료 제외)
@@ -945,6 +984,33 @@ export const useMealboxStore = create<MealboxStore>()(
         return { mealPlanMeals }
       }),
 
+      // 도시락 조합 수정
+      updateDosirakSet: (pricePoint, setNumber, updates) => set((state) => {
+        const dosirakSets = { ...state.dosirakSets }
+        const sets = dosirakSets[pricePoint]
+        if (!sets) return state
+
+        const setIdx = sets.findIndex(s => s.setNumber === setNumber)
+        if (setIdx < 0) return state
+
+        const oldSet = sets[setIdx]
+        const newSet = { ...oldSet, ...updates }
+
+        // 원가 재계산
+        newSet.totalCost = 
+          (newSet.ff?.cost || 0) + 
+          (newSet.drink?.cost || 0) + 
+          (newSet.desserts || []).reduce((sum, d) => sum + d.cost, 0)
+
+        dosirakSets[pricePoint] = [
+          ...sets.slice(0, setIdx),
+          newSet,
+          ...sets.slice(setIdx + 1)
+        ]
+
+        return { dosirakSets }
+      }),
+
       // 전체 식단 스냅샷 저장
       saveSnapshot: (name) => {
         const state = get()
@@ -968,6 +1034,7 @@ export const useMealboxStore = create<MealboxStore>()(
           mealPlanMeals: JSON.parse(JSON.stringify(state.mealPlanMeals)),
           mealPlanTargetCosts: { ...state.mealPlanTargetCosts },
           products: JSON.parse(JSON.stringify(state.products)),
+          dosirakSets: JSON.parse(JSON.stringify(state.dosirakSets)), // 도시락 5개 조합
         }
 
         set((prev) => ({
@@ -999,6 +1066,7 @@ export const useMealboxStore = create<MealboxStore>()(
             mealPlanMeals: JSON.parse(JSON.stringify(snapshot.mealPlanMeals)),
             mealPlanTargetCosts: { ...snapshot.mealPlanTargetCosts },
             products: JSON.parse(JSON.stringify(snapshot.products)),
+            dosirakSets: snapshot.dosirakSets ? JSON.parse(JSON.stringify(snapshot.dosirakSets)) : {}, // 도시락 5개 조합
             startDate: new Date(snapshot.startDate),
             endDate: new Date(snapshot.endDate),
             snapshotStatus: 'success',

@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx'
-import { MealPlanDailyMeals, MealPlanTargetCosts } from './store'
+import { MealPlanDailyMeals, MealPlanTargetCosts, DosirakSets } from './store'
 import { ALL_MEAL_PLANS, MEAL_PLAN_COST_CONFIGS } from './types'
 
 const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토']
@@ -22,11 +22,12 @@ export function downloadCustomerExcel(
   mealPlanMeals: MealPlanDailyMeals,
   mealPlanTargetCosts: MealPlanTargetCosts,
   startDate: Date,
-  endDate: Date
+  endDate: Date,
+  dosirakSets?: DosirakSets
 ) {
   const wb = XLSX.utils.book_new()
 
-  // 식단 그룹별 탭 구성
+  // 식단 그룹별 탭 구성 (도시락 제외)
   const mealGroups = [
     { label: '가)김밥', plans: ['김밥3.5', '김밥4.5', '김밥5.5'] },
     { label: '가-1)김밥(음X)', plans: ['김밥3.5(음X)'] },
@@ -35,13 +36,18 @@ export function downloadCustomerExcel(
     { label: '다)샌드', plans: ['샌드3.5', '샌드4.5', '샌드5.5'] },
     { label: '다-1)샌드(음X)', plans: ['샌드3.5(음X)'] },
     { label: '라)버거', plans: ['버거3.5', '버거4.5', '버거5.5'] },
-    { label: '마)도시락', plans: ['도시락4.5', '도시락5.5', '도시락6.5'] },
     { label: '바)공장박스', plans: ['공장박스'] },
   ]
 
   for (const group of mealGroups) {
     const ws = buildCustomerSheet(group.plans, mealPlanMeals, mealPlanTargetCosts, startDate, endDate)
     XLSX.utils.book_append_sheet(wb, ws, group.label)
+  }
+  
+  // 도시락 5개 조합 시트 (별도)
+  if (dosirakSets && Object.keys(dosirakSets).length > 0) {
+    const dosirakWs = buildDosirakCustomerSheet(dosirakSets, mealPlanTargetCosts)
+    XLSX.utils.book_append_sheet(wb, dosirakWs, '마)도시락')
   }
 
   const month = `${startDate.getFullYear()}년${String(startDate.getMonth() + 1).padStart(2, '0')}월`
@@ -53,7 +59,8 @@ export function downloadFactoryExcel(
   mealPlanMeals: MealPlanDailyMeals,
   mealPlanTargetCosts: MealPlanTargetCosts,
   startDate: Date,
-  endDate: Date
+  endDate: Date,
+  dosirakSets?: DosirakSets
 ) {
   const wb = XLSX.utils.book_new()
 
@@ -65,13 +72,18 @@ export function downloadFactoryExcel(
     { label: '다)샌드[공장]', plans: ['샌드3.5', '샌드4.5', '샌드5.5'] },
     { label: '다-1)샌드(음X)[공장]', plans: ['샌드3.5(음X)'] },
     { label: '라)버거[공장]', plans: ['버거3.5', '버거4.5', '버거5.5'] },
-    { label: '마)도시락[공장]', plans: ['도시락4.5', '도시락5.5', '도시락6.5'] },
     { label: '바)공장박스[공장]', plans: ['공장박스'] },
   ]
 
   for (const group of mealGroups) {
     const ws = buildFactorySheet(group.plans, mealPlanMeals, mealPlanTargetCosts, startDate, endDate)
     XLSX.utils.book_append_sheet(wb, ws, group.label)
+  }
+  
+  // 도시락 5개 조합 시트 (공장용)
+  if (dosirakSets && Object.keys(dosirakSets).length > 0) {
+    const dosirakWs = buildDosirakFactorySheet(dosirakSets, mealPlanTargetCosts)
+    XLSX.utils.book_append_sheet(wb, dosirakWs, '마)도시락[공장]')
   }
 
   const month = `${startDate.getFullYear()}년${String(startDate.getMonth() + 1).padStart(2, '0')}월`
@@ -389,4 +401,100 @@ function toDateStr(date: Date): string {
 
 function formatDate(date: Date): string {
   return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`
+}
+
+// 도시락 고객용 시트 (5개 조합 리스트)
+function buildDosirakCustomerSheet(
+  dosirakSets: DosirakSets,
+  mealPlanTargetCosts: MealPlanTargetCosts
+): XLSX.WorkSheet {
+  const aoa: (string | number)[][] = []
+
+  aoa.push(['밀박스25 도시락 식단표 - 5개 고정 조합'])
+  aoa.push(['※ 도시락은 날짜와 무관하게 5개 고정 조합으로 운영됩니다.'])
+  aoa.push([])
+
+  const pricePoints = [4500, 5500, 6500]
+  const planNames = ['도시락4.5', '도시락5.5', '도시락6.5']
+
+  for (let i = 0; i < pricePoints.length; i++) {
+    const pp = pricePoints[i]
+    const planName = planNames[i]
+    const sets = dosirakSets[pp] || []
+    const target = mealPlanTargetCosts[planName] ?? MEAL_PLAN_COST_CONFIGS.find(c => c.mealPlanName === planName)?.defaultCost ?? 0
+
+    aoa.push([`[${planName}] 목표원가: ${target}원`])
+    aoa.push(['조합', '도시락', '음료', '디저트'])
+
+    for (const set of sets) {
+      const dessertNames = set.desserts.map(d => d.name).join(', ') || '-'
+      aoa.push([
+        `조합 ${set.setNumber}`,
+        set.ff?.name || '-',
+        set.drink?.name || '-',
+        dessertNames
+      ])
+    }
+
+    // 평균 원가
+    if (sets.length > 0) {
+      const avg = Math.round(sets.reduce((s, set) => s + set.totalCost, 0) / sets.length)
+      aoa.push([])
+      aoa.push(['평균 원가', `${avg}원`, '목표 대비', `${avg - target >= 0 ? '+' : ''}${avg - target}원`])
+    }
+    aoa.push([])
+  }
+
+  return XLSX.utils.aoa_to_sheet(aoa)
+}
+
+// 도시락 공장용 시트 (5개 조합 + 상세 정보)
+function buildDosirakFactorySheet(
+  dosirakSets: DosirakSets,
+  mealPlanTargetCosts: MealPlanTargetCosts
+): XLSX.WorkSheet {
+  const aoa: (string | number)[][] = []
+
+  aoa.push(['밀박스25 도시락 공장 식단표 - 5개 고정 조합'])
+  aoa.push(['※ 상시 생산 품목 (날짜 무관)'])
+  aoa.push([])
+
+  const pricePoints = [4500, 5500, 6500]
+  const planNames = ['도시락4.5', '도시락5.5', '도시락6.5']
+
+  for (let i = 0; i < pricePoints.length; i++) {
+    const pp = pricePoints[i]
+    const planName = planNames[i]
+    const sets = dosirakSets[pp] || []
+    const target = mealPlanTargetCosts[planName] ?? MEAL_PLAN_COST_CONFIGS.find(c => c.mealPlanName === planName)?.defaultCost ?? 0
+
+    aoa.push([`[${planName}] 목표원가: ${target}원`])
+    aoa.push(['조합', '도시락', '도시락 단가', '음료', '음료 단가', '디저트', '디저트 단가', '세트 합계'])
+
+    for (const set of sets) {
+      const dessertNames = set.desserts.map(d => d.name).join(', ') || '-'
+      const dessertCost = set.desserts.reduce((s, d) => s + d.cost, 0)
+      aoa.push([
+        `조합 ${set.setNumber}`,
+        set.ff?.name || '-',
+        set.ff?.cost ?? 0,
+        set.drink?.name || '-',
+        set.drink?.cost ?? 0,
+        dessertNames,
+        dessertCost,
+        set.totalCost
+      ])
+    }
+
+    // 평균 원가
+    if (sets.length > 0) {
+      const avg = Math.round(sets.reduce((s, set) => s + set.totalCost, 0) / sets.length)
+      const total = sets.reduce((s, set) => s + set.totalCost, 0)
+      aoa.push([])
+      aoa.push(['평균 원가', `${avg}원`, '목표 대비', `${avg - target >= 0 ? '+' : ''}${avg - target}원`, '총 원가', `${total}원`])
+    }
+    aoa.push([])
+  }
+
+  return XLSX.utils.aoa_to_sheet(aoa)
 }
