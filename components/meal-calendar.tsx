@@ -78,6 +78,11 @@ export function MealCalendar() {
   const [syncSameType, setSyncSameType] = useState(true)
   // 금요일 삼각박스 컵라면 필수 규칙 강제 변경 허용 여부
   const [cupRamenOverride, setCupRamenOverride] = useState(false)
+
+  // 구성품 교체 다이얼로그: 선택 상태 (확정 전 임시)
+  const [pendingProduct, setPendingProduct] = useState<Product | null>(null)
+  // 도시락 조합 수정용 선택 상태
+  const [pendingDosirakProduct, setPendingDosirakProduct] = useState<Product | null>(null)
   
   // 스냅샷 다이얼로그 상태
   const [showSaveDialog, setShowSaveDialog] = useState(false)
@@ -413,6 +418,7 @@ export function MealCalendar() {
   ) => {
     if (!selectedMealPlan) return
     setCupRamenOverride(false) // 다이얼로그 열 때마다 override 리셋
+    setPendingProduct(null) // 선택 상태 초기화
     setEditingComponent({ date, mealPlanName: selectedMealPlan, componentType, componentIndex, currentProduct })
   }
 
@@ -438,6 +444,7 @@ export function MealCalendar() {
     componentIndex: number,
     currentProduct: Product | null
   ) => {
+    setPendingDosirakProduct(null) // 선택 상태 초기화
     setEditingDosirakSet({ pricePoint, setNumber, componentType, componentIndex, currentProduct })
   }
   
@@ -1273,63 +1280,109 @@ export function MealCalendar() {
                 </div>
               )}
 
-              {/* 상품 목록 */}
-              <ScrollArea className="h-64 rounded border border-border">
+              {/* 실시간 가격 시뮬레이션 프리뷰 */}
+              {pendingProduct && pendingProduct.id !== editingComponent.currentProduct?.id && currentComp && (() => {
+                const newTotal = isFF
+                  ? pendingProduct.cost + (currentComp.drink?.cost || 0) + currentComp.desserts.reduce((s, d) => s + d.cost, 0)
+                  : isDrink
+                    ? (currentComp.ff?.cost || 0) + pendingProduct.cost + currentComp.desserts.reduce((s, d) => s + d.cost, 0)
+                    : (() => {
+                        const newDesserts = [...currentComp.desserts]
+                        if (dessertIdx < newDesserts.length) newDesserts[dessertIdx] = pendingProduct
+                        return (currentComp.ff?.cost || 0) + (currentComp.drink?.cost || 0) + newDesserts.reduce((s, d) => s + d.cost, 0)
+                      })()
+                const diff = newTotal - currentComp.totalCost
+                const targetCost = editingComponent.mealPlanName === '공장박스'
+                  ? (mealPlanTargetCosts['공장박스'] ?? 963)
+                  : (currentMealPlanInfo ? targetCosts[currentMealPlanInfo.price] : 0)
+                const isOver = newTotal > targetCost * 1.03
+
+                return (
+                  <div className={`rounded-lg border px-3 py-2 ${isOver ? 'border-destructive/40 bg-destructive/5' : 'border-primary/40 bg-primary/5'}`}>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">변경 시 합계</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground line-through">{currentComp.totalCost.toLocaleString()}원</span>
+                        <span className="text-foreground">→</span>
+                        <span className={`font-semibold ${isOver ? 'text-destructive' : 'text-primary'}`}>{newTotal.toLocaleString()}원</span>
+                        <span className={`text-xs ${diff > 0 ? 'text-destructive' : 'text-primary'}`}>
+                          ({diff >= 0 ? '+' : ''}{diff.toLocaleString()}원)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* 상품 목록: 현재 상품 최상단 고정 + 나머지 가격순 */}
+              <ScrollArea className="h-56 rounded border border-border">
                 <div className="p-2 space-y-1">
                   {getAvailableProducts.length === 0 && (
                     <div className="text-center py-4 text-muted-foreground text-sm">교체 가능한 상품이 없습니다</div>
                   )}
-                  {getAvailableProducts.map((product) => {
-                    const isCurrent = editingComponent.currentProduct?.id === product.id
-                    const ffOverused = isFF && (weeklyFFCount[product.id] || 0) >= 2 && !isCurrent
-                    // 선택 시 예상 합계 원가
-                    const previewTotal = currentComp
-                      ? (() => {
-                          if (isFF) return product.cost + (currentComp.drink?.cost || 0) + currentComp.desserts.reduce((s, d) => s + d.cost, 0)
-                          if (isDrink) return (currentComp.ff?.cost || 0) + product.cost + currentComp.desserts.reduce((s, d) => s + d.cost, 0)
-                          const newDesserts = [...currentComp.desserts]
-                          if (dessertIdx < newDesserts.length) newDesserts[dessertIdx] = product
-                          return (currentComp.ff?.cost || 0) + (currentComp.drink?.cost || 0) + newDesserts.reduce((s, d) => s + d.cost, 0)
-                        })()
-                      : null
-                    const targetCost = editingComponent.mealPlanName === '공장박스'
-                      ? (mealPlanTargetCosts['공장박스'] ?? 963)
-                      : (currentMealPlanInfo ? targetCosts[currentMealPlanInfo.price] : 0)
-                    const previewOver = previewTotal !== null && previewTotal > targetCost * 1.03
+                  {(() => {
+                    // 현재 상품 최상단, 나머지 가격순 정렬
+                    const currentId = editingComponent.currentProduct?.id
+                    const sorted = [...getAvailableProducts].sort((a, b) => {
+                      if (a.id === currentId) return -1
+                      if (b.id === currentId) return 1
+                      return a.cost - b.cost
+                    })
+                    return sorted.map((product) => {
+                      const isCurrent = currentId === product.id
+                      const isSelected = pendingProduct?.id === product.id
+                      const ffOverused = isFF && (weeklyFFCount[product.id] || 0) >= 2 && !isCurrent
 
-                    return (
-                      <button
-                        key={product.id}
-                        onClick={() => handleSelectProduct(product)}
-                        className={`w-full text-left p-2 rounded transition-colors flex items-start justify-between gap-2 ${
-                          isCurrent
-                            ? 'bg-primary/10 border border-primary/30'
-                            : 'hover:bg-secondary'
-                        }`}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-medium text-foreground truncate">{product.name}</span>
-                            {ffOverused && (
-                              <span className="shrink-0 text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">주 2회 초과</span>
-                            )}
-                          </div>
-                          <div className="text-xs text-muted-foreground">{product.group || product.ffType || '-'}</div>
-                        </div>
-                        <div className="shrink-0 text-right">
-                          <div className="text-sm text-muted-foreground">{product.cost.toLocaleString()}원</div>
-                          {previewTotal !== null && !isCurrent && (
-                            <div className={`text-xs ${previewOver ? 'text-destructive' : 'text-primary'}`}>
-                              합계 {previewTotal.toLocaleString()}원
+                      return (
+                        <button
+                          key={product.id}
+                          onClick={() => setPendingProduct(product)}
+                          className={`w-full text-left p-2 rounded transition-colors flex items-start justify-between gap-2 ${
+                            isSelected
+                              ? 'bg-primary/20 border-2 border-primary ring-1 ring-primary/30'
+                              : isCurrent
+                                ? 'bg-secondary/80 border border-border'
+                                : 'hover:bg-secondary'
+                          }`}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              {isCurrent && <span className="shrink-0 text-[10px] px-1.5 py-0.5 bg-muted text-muted-foreground rounded">현재</span>}
+                              <span className="text-sm font-medium text-foreground truncate">{product.name}</span>
+                              {ffOverused && (
+                                <span className="shrink-0 text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full">주 2회 초과</span>
+                              )}
                             </div>
-                          )}
-                        </div>
-                        {isCurrent && <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />}
-                      </button>
-                    )
-                  })}
+                            <div className="text-xs text-muted-foreground">{product.group || product.ffType || '-'}</div>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <div className="text-sm text-muted-foreground">{product.cost.toLocaleString()}원</div>
+                          </div>
+                          {isSelected && <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />}
+                        </button>
+                      )
+                    })
+                  })()}
                 </div>
               </ScrollArea>
+
+              {/* 하단 확정/취소 버튼 */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                <Button variant="outline" size="sm" onClick={() => setEditingComponent(null)}>
+                  취소
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!pendingProduct || pendingProduct.id === editingComponent.currentProduct?.id}
+                  onClick={() => {
+                    if (pendingProduct) {
+                      handleSelectProduct(pendingProduct)
+                    }
+                  }}
+                >
+                  확정
+                </Button>
+              </div>
             </DialogContent>
           </Dialog>
         )
@@ -1347,13 +1400,47 @@ export function MealCalendar() {
                 } 변경
               </DialogTitle>
               <DialogDescription className="text-muted-foreground text-sm">
-                교체할 상품을 선택하세요.
+                현재: <span className="font-medium text-foreground">{editingDosirakSet.currentProduct?.name || '없음'}</span>
+                {editingDosirakSet.currentProduct && <span className="ml-1">({editingDosirakSet.currentProduct.cost.toLocaleString()}원)</span>}
               </DialogDescription>
             </DialogHeader>
-            <ScrollArea className="max-h-80">
-              <div className="space-y-1 pr-2">
+
+            {/* 실시간 가격 시뮬레이션 */}
+            {pendingDosirakProduct && pendingDosirakProduct.id !== editingDosirakSet.currentProduct?.id && (() => {
+              const currentSet = dosirakSets[editingDosirakSet.pricePoint]?.find(s => s.setNumber === editingDosirakSet.setNumber)
+              if (!currentSet) return null
+              const currentTotal = currentSet.totalCost
+              let newTotal = currentTotal
+              if (editingDosirakSet.componentType === 'ff') {
+                newTotal = pendingDosirakProduct.cost + (currentSet.drink?.cost || 0) + currentSet.desserts.reduce((s, d) => s + d.cost, 0)
+              } else if (editingDosirakSet.componentType === 'drink') {
+                newTotal = (currentSet.ff?.cost || 0) + pendingDosirakProduct.cost + currentSet.desserts.reduce((s, d) => s + d.cost, 0)
+              } else {
+                const dessertsCost = currentSet.desserts.reduce((s, d, i) => s + (i === editingDosirakSet.componentIndex ? pendingDosirakProduct.cost : d.cost), 0)
+                newTotal = (currentSet.ff?.cost || 0) + (currentSet.drink?.cost || 0) + dessertsCost
+              }
+              const diff = newTotal - currentTotal
+              return (
+                <div className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">변경 시 합계</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground line-through">{currentTotal.toLocaleString()}원</span>
+                      <span className="text-foreground">→</span>
+                      <span className="font-semibold text-primary">{newTotal.toLocaleString()}원</span>
+                      <span className={`text-xs ${diff > 0 ? 'text-destructive' : 'text-primary'}`}>
+                        ({diff >= 0 ? '+' : ''}{diff.toLocaleString()}원)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+
+            <ScrollArea className="max-h-64 rounded border border-border">
+              <div className="p-2 space-y-1">
                 {(() => {
-                  const { componentType } = editingDosirakSet
+                  const { componentType, currentProduct } = editingDosirakSet
                   let pool: Product[] = []
                   if (componentType === 'ff') {
                     pool = products.filter(p => p.category === 'ff' && p.ffType === '도시락')
@@ -1362,28 +1449,60 @@ export function MealCalendar() {
                   } else {
                     pool = products.filter(p => p.category === 'dessert')
                   }
-                  return pool.sort((a, b) => a.cost - b.cost).map(product => {
-                    const isCurrent = product.id === editingDosirakSet.currentProduct?.id
+                  // 현재 상품 최상단 + 나머지 가격순
+                  const sorted = [...pool].sort((a, b) => {
+                    if (a.id === currentProduct?.id) return -1
+                    if (b.id === currentProduct?.id) return 1
+                    return a.cost - b.cost
+                  })
+                  return sorted.map(product => {
+                    const isCurrent = product.id === currentProduct?.id
+                    const isSelected = pendingDosirakProduct?.id === product.id
                     return (
                       <button
                         key={product.id}
-                        onClick={() => handleSelectDosirakProduct(product)}
+                        onClick={() => setPendingDosirakProduct(product)}
                         className={`w-full text-left p-2 rounded transition-colors flex items-start justify-between gap-2 ${
-                          isCurrent ? 'bg-primary/10 border border-primary/30' : 'hover:bg-secondary'
+                          isSelected
+                            ? 'bg-primary/20 border-2 border-primary ring-1 ring-primary/30'
+                            : isCurrent
+                              ? 'bg-secondary/80 border border-border'
+                              : 'hover:bg-secondary'
                         }`}
                       >
                         <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium text-foreground truncate">{product.name}</span>
+                          <div className="flex items-center gap-1.5">
+                            {isCurrent && <span className="shrink-0 text-[10px] px-1.5 py-0.5 bg-muted text-muted-foreground rounded">현재</span>}
+                            <span className="text-sm font-medium text-foreground truncate">{product.name}</span>
+                          </div>
                           <div className="text-xs text-muted-foreground">{product.group || product.ffType || '-'}</div>
                         </div>
                         <div className="shrink-0 text-sm text-muted-foreground">{product.cost.toLocaleString()}원</div>
-                        {isCurrent && <Check className="w-4 h-4 text-primary shrink-0" />}
+                        {isSelected && <Check className="w-4 h-4 text-primary shrink-0" />}
                       </button>
                     )
                   })
                 })()}
               </div>
             </ScrollArea>
+
+            {/* 하단 확정/취소 버튼 */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+              <Button variant="outline" size="sm" onClick={() => setEditingDosirakSet(null)}>
+                취소
+              </Button>
+              <Button
+                size="sm"
+                disabled={!pendingDosirakProduct || pendingDosirakProduct.id === editingDosirakSet.currentProduct?.id}
+                onClick={() => {
+                  if (pendingDosirakProduct) {
+                    handleSelectDosirakProduct(pendingDosirakProduct)
+                  }
+                }}
+              >
+                확정
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       )}
