@@ -12,6 +12,7 @@ export function CostSettings() {
   const samgakConfigs = MEAL_PLAN_COST_CONFIGS.filter(c => c.ffType === '주먹밥')
   const burgerConfigs = MEAL_PLAN_COST_CONFIGS.filter(c => c.ffType === '버거')
   const dosirakConfigs = MEAL_PLAN_COST_CONFIGS.filter(c => c.ffType === '도시락')
+  const factoryBoxConfigs = MEAL_PLAN_COST_CONFIGS.filter(c => c.mealPlanName === '공장박스')
 
   const renderCostGroup = (title: string, configs: typeof MEAL_PLAN_COST_CONFIGS, note?: string) => (
     <div className="space-y-2">
@@ -58,6 +59,7 @@ export function CostSettings() {
         {renderCostGroup('삼각 식단', samgakConfigs)}
         {renderCostGroup('버거 식단', burgerConfigs)}
         {renderCostGroup('도시락 식단', dosirakConfigs)}
+        {renderCostGroup('공장박스', factoryBoxConfigs, '고정 원가 기준 · 월:샌드단품 / 화~일:삼각김밥+음료')}
       </div>
       
       <p className="text-xs text-muted-foreground mt-4">

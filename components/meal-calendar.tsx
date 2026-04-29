@@ -236,7 +236,10 @@ export function MealCalendar() {
     
     const totalCost = allCosts.reduce((a, b) => a + b, 0)
     const avgCost = Math.round(totalCost / allCosts.length)
-    const targetCost = targetCosts[currentMealPlanInfo.price]
+    // 공장박스는 mealPlanTargetCosts에서 고정 원가 963원 참조, 나머지는 가격대 기준
+    const targetCost = selectedMealPlan === '공장박스'
+      ? (mealPlanTargetCosts['공장박스'] ?? 963)
+      : targetCosts[currentMealPlanInfo.price]
     const diff = avgCost - targetCost
     
     return {
@@ -504,7 +507,11 @@ export function MealCalendar() {
               const composition = meal && currentMealPlanInfo 
                 ? meal.compositions[currentMealPlanInfo.price] 
                 : null
-              const targetCost = currentMealPlanInfo ? targetCosts[currentMealPlanInfo.price] * 1.03 : 0
+              // 공장박스는 고정 원가 963원(mealPlanTargetCosts), 나머지는 가격대 기준
+              const baseCost = selectedMealPlan === '공장박스'
+                ? (mealPlanTargetCosts['공장박스'] ?? 963)
+                : (currentMealPlanInfo ? targetCosts[currentMealPlanInfo.price] : 0)
+              const targetCost = baseCost * 1.03
               const isOverBudget = composition && composition.totalCost > targetCost
               
               // 공장 뷰: 생산일 범위 (배송일 - 1일이므로 하루 앞당겨 표시)
@@ -827,7 +834,11 @@ export function MealCalendar() {
                 <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-muted/50 text-sm">
                   <span className="text-muted-foreground">현재 합계 원가</span>
                   <span className="font-semibold text-foreground">{currentComp.totalCost.toLocaleString()}원</span>
-                  <span className="text-muted-foreground text-xs">/ 목표 {(currentMealPlanInfo ? targetCosts[currentMealPlanInfo.price] : 0).toLocaleString()}원</span>
+                  <span className="text-muted-foreground text-xs">/ 목표 {(
+                    editingComponent.mealPlanName === '공장박스'
+                      ? (mealPlanTargetCosts['공장박스'] ?? 963)
+                      : (currentMealPlanInfo ? targetCosts[currentMealPlanInfo.price] : 0)
+                  ).toLocaleString()}원</span>
                 </div>
               )}
 
@@ -850,7 +861,9 @@ export function MealCalendar() {
                           return (currentComp.ff?.cost || 0) + (currentComp.drink?.cost || 0) + newDesserts.reduce((s, d) => s + d.cost, 0)
                         })()
                       : null
-                    const targetCost = currentMealPlanInfo ? targetCosts[currentMealPlanInfo.price] : 0
+                    const targetCost = editingComponent.mealPlanName === '공장박스'
+                      ? (mealPlanTargetCosts['공장박스'] ?? 963)
+                      : (currentMealPlanInfo ? targetCosts[currentMealPlanInfo.price] : 0)
                     const previewOver = previewTotal !== null && previewTotal > targetCost * 1.03
 
                     return (

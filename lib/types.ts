@@ -55,7 +55,7 @@ export const MEAL_PLAN_COST_CONFIGS: MealPlanCostConfig[] = [
   { name: '도시락5.5', mealPlanName: '도시락5.5', description: '도시락 + 음료 + 디저트1', defaultCost: 2694, ffType: '도시락', pricePoint: 5500 },
   { name: '도시락6.5', mealPlanName: '도시락6.5', description: '도시락 + 음료 + 디저트1', defaultCost: 3191, ffType: '도시락', pricePoint: 6500 },
   // 공장박스 (특수 식단)
-  { name: '공장박스', mealPlanName: '공장박스' as MealPlanName, description: '월:샌드단품 / 화~일:삼각김밥+음료', defaultCost: 964, ffType: '샌드', pricePoint: 3500 },
+  { name: '공장박스', mealPlanName: '공장박스' as MealPlanName, description: '월:샌드단품 / 화~일:삼각김밥+음료 (고정 원가)', defaultCost: 963, ffType: '샌드', pricePoint: 3500 },
 ]
 
 // 식단 표시용 (음X 포함)
