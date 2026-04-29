@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { ChevronLeft, ChevronRight, AlertCircle, Download, Pencil, Check, Factory, Users, Save, FolderOpen, Trash2, Loader2 } from 'lucide-react'
+import { useState, useMemo, useRef } from 'react'
+import { ChevronLeft, ChevronRight, AlertCircle, Download, Pencil, Check, Factory, Users, Save, FolderOpen, Trash2, Loader2, Plus, X, GripVertical, Copy, Move } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useMealboxStore } from '@/lib/store'
 import { MealComposition, ALL_MEAL_PLANS, Product } from '@/lib/types'
@@ -40,6 +40,7 @@ export function MealCalendar() {
     setSelectedMonth, 
     mealPlanMeals, 
     dosirakSets,
+    freeFormatData,
     targetCosts,
     mealPlanTargetCosts,
     selectedMealPlan,
@@ -49,6 +50,9 @@ export function MealCalendar() {
     updateMealComponent,
     updateFF,
     updateDosirakSet,
+    setFreeSlot,
+    moveFreeDay,
+    clearFreeDay,
     snapshots,
     snapshotStatus,
     snapshotMessage,
@@ -91,6 +95,21 @@ export function MealCalendar() {
   
   // 도시락 여부 체크
   const isDosirak = selectedMealPlan?.startsWith('도시락')
+  // 프리포맷 여부 체크
+  const isFreeFormat = selectedMealPlan === '프리포맷'
+
+  // 프리포맷: 수정 다이얼로그 상태
+  const [freeEditState, setFreeEditState] = useState<{
+    date: string
+    slotIndex: number
+    mode: 'product' | 'text'
+    currentText?: string
+  } | null>(null)
+  const [freeCustomText, setFreeCustomText] = useState('')
+
+  // 프리포맷: 드래그 출발 날짜
+  const freeDragRef = useRef<string | null>(null)
+  const [freeDragOver, setFreeDragOver] = useState<string | null>(null)
   
   // Ensure dates are Date objects
   const startDate = storedStartDate instanceof Date ? storedStartDate : storedStartDate ? new Date(storedStartDate) : null
@@ -283,8 +302,8 @@ export function MealCalendar() {
   const currentDosirakPrice = isDosirak && currentMealPlanInfo ? currentMealPlanInfo.price : 0
   const currentDosirakSets = isDosirak ? dosirakSets[currentDosirakPrice] || [] : []
 
-  // 식단 데이터가 없으면 생성 안내 (도시락은 별도 체크)
-  if (!isDosirak && currentMealPlanData.length === 0) {
+  // 식단 데이터가 없으면 생성 안내 (도시락·프리포맷은 별도 체크)
+  if (!isDosirak && !isFreeFormat && currentMealPlanData.length === 0) {
     return (
       <div className="rounded-lg border border-border bg-card p-8 text-center">
         <p className="text-muted-foreground">
@@ -306,12 +325,12 @@ export function MealCalendar() {
 
   const handleDownloadCustomer = () => {
     if (!startDate || !endDate) return
-    downloadCustomerExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets)
+    downloadCustomerExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
   }
 
   const handleDownloadFactory = () => {
     if (!startDate || !endDate) return
-    downloadFactoryExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets)
+    downloadFactoryExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
   }
 
   const hasData = startDate && endDate && Object.keys(mealPlanMeals).length > 0
@@ -472,7 +491,7 @@ export function MealCalendar() {
 
       {/* 상단 컨트롤: 뷰 모드 토글 + 스냅샷 + 다운로드 버튼 */}
       <div className="flex items-center justify-between">
-        {/* 뷰 모드 토글 - 도시락은 날짜 개념이 없어 비활성화 */}
+        {/* 뷰 모드 토글 - 도시락은 날짜 개념이 없어 비활성화, 프리포맷은 정상 작동 */}
         {isDosirak ? (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-secondary/50 rounded-lg text-sm text-muted-foreground">
             <Factory className="w-4 h-4" />
@@ -547,8 +566,177 @@ export function MealCalendar() {
         </div>
       </div>
 
+      {/* 프리포맷: 자유 편집 캘린더 그리드 */}
+      {isFreeFormat ? (
+        <div className="flex gap-4">
+          <div className="flex-1 rounded-lg border border-border bg-card">
+            {/* 헤더 */}
+            <div className="flex items-center justify-between p-3 border-b border-border">
+              <div className="flex gap-1">
+                <Button variant="ghost" size="sm" onClick={prevMonth}><ChevronLeft className="w-4 h-4" /></Button>
+                <Button variant="ghost" size="sm" onClick={nextMonth}><ChevronRight className="w-4 h-4" /></Button>
+              </div>
+              <div className="text-center">
+                <h2 className="text-base font-semibold text-foreground">{year}년 {month + 1}월</h2>
+                <p className="text-[10px] text-muted-foreground mt-0.5">셀 클릭으로 슬롯 추가 · 드래그로 날짜간 복사/이동</p>
+              </div>
+              <div className="w-16" />
+            </div>
+            {/* 요일 헤더 */}
+            <div className="grid grid-cols-7 border-b border-border">
+              {WEEKDAYS.map((day, i) => (
+                <div key={i} className={`py-2 text-center text-xs font-medium ${i === 0 ? 'text-destructive' : i === 6 ? 'text-primary' : 'text-muted-foreground'}`}>
+                  {day}
+                </div>
+              ))}
+            </div>
+            {/* 날짜 그리드 */}
+            <div className="grid grid-cols-7">
+              {calendarDays.map((dateInfo, idx) => {
+                const dateStr = `${dateInfo.year}-${String(dateInfo.month + 1).padStart(2, '0')}-${String(dateInfo.day).padStart(2, '0')}`
+                const currentDate = new Date(dateInfo.year, dateInfo.month, dateInfo.day)
+
+                // 프리포맷도 뷰 모드 반영
+                let displayDateStr = dateStr
+                if (viewMode === 'factory') {
+                  const nd = new Date(currentDate)
+                  nd.setDate(nd.getDate() + 1)
+                  displayDateStr = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}-${String(nd.getDate()).padStart(2, '0')}`
+                }
+                const dayData = freeFormatData[displayDateStr]
+                const slots = dayData?.slots ?? []
+                const totalCost = slots.reduce((s, sl) => s + sl.cost, 0)
+
+                const inRange = viewMode === 'factory'
+                  ? (() => {
+                      const nd = new Date(currentDate); nd.setDate(nd.getDate() + 1)
+                      return startDate && endDate && nd >= startDate && nd <= endDate
+                    })()
+                  : isInRangeDate(currentDate)
+
+                const isDragOver = freeDragOver === displayDateStr
+
+                return (
+                  <div
+                    key={idx}
+                    className={`min-h-28 p-1 border-r border-b border-border last:border-r-0 transition-colors
+                      ${!dateInfo.isCurrentMonth ? 'bg-secondary/20 opacity-50' : ''}
+                      ${inRange ? 'hover:bg-secondary/20' : 'opacity-30'}
+                      ${idx % 7 === 0 && inRange ? 'bg-red-50/30' : ''}
+                      ${idx % 7 === 6 && inRange ? 'bg-sky-50/30' : ''}
+                      ${isDragOver && inRange ? 'ring-2 ring-primary ring-inset bg-primary/5' : ''}
+                      ${viewMode === 'factory' && inRange ? 'bg-amber-50/40' : ''}`}
+                    onDragOver={(e) => { if (!inRange) return; e.preventDefault(); setFreeDragOver(displayDateStr) }}
+                    onDragLeave={() => setFreeDragOver(null)}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      setFreeDragOver(null)
+                      if (!inRange || !freeDragRef.current || freeDragRef.current === displayDateStr) return
+                      const fromDate = freeDragRef.current
+                      const dropMode = e.shiftKey ? 'move' : 'copy'
+                      moveFreeDay(fromDate, displayDateStr, dropMode)
+                      freeDragRef.current = null
+                    }}
+                  >
+                    {/* 날짜 숫자 + 총원가 */}
+                    <div className="flex items-start justify-between mb-0.5">
+                      <span className={`text-xs font-medium ${
+                        !dateInfo.isCurrentMonth ? 'text-muted-foreground/40'
+                          : idx % 7 === 0 ? 'text-destructive' : idx % 7 === 6 ? 'text-primary' : 'text-foreground'
+                      }`}>{dateInfo.day}</span>
+                      {inRange && totalCost > 0 && (
+                        <span className="text-[8px] text-muted-foreground leading-tight">{totalCost.toLocaleString()}원</span>
+                      )}
+                    </div>
+
+                    {inRange && (
+                      <div className="space-y-0.5">
+                        {/* 기존 슬롯 */}
+                        {slots.map((slot, si) => (
+                          <div
+                            key={slot.id}
+                            className="group flex items-center gap-0.5 px-0.5 py-px rounded bg-secondary/70 hover:bg-secondary cursor-pointer"
+                            onClick={() => {
+                              setFreeEditState({ date: displayDateStr, slotIndex: si, mode: slot.customText ? 'text' : 'product', currentText: slot.customText })
+                              setFreeCustomText(slot.customText ?? '')
+                            }}
+                          >
+                            <GripVertical className="w-2 h-2 text-muted-foreground/40 shrink-0" />
+                            <span className="text-[9px] text-foreground truncate flex-1 leading-tight">
+                              {slot.customText ?? slot.product?.name ?? ''}
+                            </span>
+                            <button
+                              className="opacity-0 group-hover:opacity-100 shrink-0"
+                              onClick={(e) => { e.stopPropagation(); setFreeSlot(displayDateStr, si, null) }}
+                            >
+                              <X className="w-2 h-2 text-muted-foreground" />
+                            </button>
+                          </div>
+                        ))}
+
+                        {/* 슬롯 추가 버튼 (최대 5개) */}
+                        {slots.length < 5 && (
+                          <button
+                            className="w-full flex items-center justify-center gap-0.5 px-0.5 py-px rounded border border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors"
+                            onClick={() => {
+                              setFreeEditState({ date: displayDateStr, slotIndex: slots.length, mode: 'product' })
+                              setFreeCustomText('')
+                            }}
+                          >
+                            <Plus className="w-2.5 h-2.5 text-muted-foreground" />
+                          </button>
+                        )}
+
+                        {/* 드래그 핸들 (셀 우상단, hover 시 노출) */}
+                        {slots.length > 0 && (
+                          <div
+                            draggable
+                            onDragStart={() => { freeDragRef.current = displayDateStr }}
+                            onDragEnd={() => { freeDragRef.current = null; setFreeDragOver(null) }}
+                            className="flex items-center justify-end mt-0.5 cursor-grab active:cursor-grabbing opacity-0 hover:opacity-100 group-hover:opacity-100"
+                            title="드래그: 복사 | Shift+드래그: 이동"
+                          >
+                            <Copy className="w-2.5 h-2.5 text-muted-foreground/60" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 프리포맷 사이드바: 월 합계 원가 */}
+          <div className="w-36 shrink-0 rounded-lg border border-border bg-card p-3">
+            <h3 className="text-sm font-semibold text-foreground mb-3 text-center">원가 참고</h3>
+            <p className="text-[10px] text-muted-foreground text-center mb-4">목표 원가 설정 없음<br/>합계만 표시</p>
+            <div className="space-y-2">
+              {calendarDays
+                .filter((dateInfo) => {
+                  const d = new Date(dateInfo.year, dateInfo.month, dateInfo.day)
+                  return isInRangeDate(d) && dateInfo.isCurrentMonth
+                })
+                .map((dateInfo) => {
+                  const dateStr = `${dateInfo.year}-${String(dateInfo.month + 1).padStart(2, '0')}-${String(dateInfo.day).padStart(2, '0')}`
+                  const dayData = freeFormatData[dateStr]
+                  if (!dayData || dayData.slots.length === 0) return null
+                  const total = dayData.slots.reduce((s, sl) => s + sl.cost, 0)
+                  return (
+                    <div key={dateStr} className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">{dateInfo.month + 1}/{dateInfo.day}</span>
+                      <span className="font-medium text-foreground">{total.toLocaleString()}원</span>
+                    </div>
+                  )
+                })
+                .filter(Boolean)}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* 도시락: 5개 고정 조합 카드 UI */}
-      {isDosirak ? (
+      {!isFreeFormat && isDosirak ? (
         <div className="flex gap-4">
           <div className="flex-1">
             <div className="rounded-lg border border-border bg-card p-4">
@@ -1024,7 +1212,7 @@ export function MealCalendar() {
                   {editingComponent.mealPlanName === '김밥4.5' && !isFF && (
                     <div className="flex items-start gap-1.5 px-3 py-1.5 rounded-md bg-primary/5 border border-primary/20">
                       <span className="text-primary text-xs font-semibold shrink-0 mt-0.5">연동 대상</span>
-                      <p className="text-xs text-primary/80">김밥4.5 구성품 변경 시 삼각3.5에 자동 반영됩니다. (단가 보정 연동)</p>
+                      <p className="text-xs text-primary/80">김밥4.5 구성품 변경 시 삼각3.5에 자동 반영됩니다. (단��� 보정 연동)</p>
                     </div>
                   )}
                   {editingComponent.mealPlanName === '김밥5.5' && !isFF && (
@@ -1196,6 +1384,97 @@ export function MealCalendar() {
                 })()}
               </div>
             </ScrollArea>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* 프리포맷 슬롯 편집 다이얼로그 */}
+      {freeEditState && (
+        <Dialog open={!!freeEditState} onOpenChange={() => setFreeEditState(null)}>
+          <DialogContent className="max-w-md bg-card">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">슬롯 {freeEditState.slotIndex + 1} 편집</DialogTitle>
+              <DialogDescription className="text-muted-foreground text-sm">
+                전체 상품 마스터에서 선택하거나 텍스트를 직접 입력하세요.
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* 모드 탭 */}
+            <div className="flex gap-1 p-1 bg-secondary rounded-lg">
+              <button
+                className={`flex-1 py-1.5 text-xs rounded transition-colors ${freeEditState.mode === 'product' ? 'bg-card shadow-sm text-foreground font-medium' : 'text-muted-foreground'}`}
+                onClick={() => setFreeEditState(s => s ? { ...s, mode: 'product' } : s)}
+              >상품 선택</button>
+              <button
+                className={`flex-1 py-1.5 text-xs rounded transition-colors ${freeEditState.mode === 'text' ? 'bg-card shadow-sm text-foreground font-medium' : 'text-muted-foreground'}`}
+                onClick={() => setFreeEditState(s => s ? { ...s, mode: 'text' } : s)}
+              >텍스트 직접 입력</button>
+            </div>
+
+            {freeEditState.mode === 'text' ? (
+              <div className="space-y-3">
+                <Input
+                  value={freeCustomText}
+                  onChange={(e) => setFreeCustomText(e.target.value)}
+                  placeholder="메뉴명 직접 입력 (예: 특제 도시락)"
+                  className="bg-background"
+                  autoFocus
+                />
+                <Button
+                  className="w-full"
+                  disabled={!freeCustomText.trim()}
+                  onClick={() => {
+                    if (!freeCustomText.trim()) return
+                    setFreeSlot(freeEditState.date, freeEditState.slotIndex, {
+                      id: Math.random().toString(36).substring(2, 9),
+                      customText: freeCustomText.trim(),
+                      cost: 0,
+                    })
+                    setFreeEditState(null)
+                  }}
+                >
+                  저장
+                </Button>
+              </div>
+            ) : (
+              <ScrollArea className="max-h-72">
+                <div className="space-y-0.5 pr-2">
+                  {/* FF */}
+                  <p className="text-[10px] text-muted-foreground font-medium px-1 pt-1">FF</p>
+                  {products.filter(p => p.category === 'ff').map(p => (
+                    <button key={p.id} onClick={() => {
+                      setFreeSlot(freeEditState.date, freeEditState.slotIndex, { id: Math.random().toString(36).substring(2, 9), product: p, cost: p.cost })
+                      setFreeEditState(null)
+                    }} className="w-full text-left px-2 py-1.5 rounded hover:bg-secondary flex justify-between items-center text-sm">
+                      <span className="text-foreground truncate">{p.name}</span>
+                      <span className="text-xs text-muted-foreground shrink-0 ml-2">{p.cost.toLocaleString()}원</span>
+                    </button>
+                  ))}
+                  {/* 음료 */}
+                  <p className="text-[10px] text-muted-foreground font-medium px-1 pt-2">음료</p>
+                  {products.filter(p => p.category === 'drink').map(p => (
+                    <button key={p.id} onClick={() => {
+                      setFreeSlot(freeEditState.date, freeEditState.slotIndex, { id: Math.random().toString(36).substring(2, 9), product: p, cost: p.cost })
+                      setFreeEditState(null)
+                    }} className="w-full text-left px-2 py-1.5 rounded hover:bg-secondary flex justify-between items-center text-sm">
+                      <span className="text-foreground truncate">{p.name}</span>
+                      <span className="text-xs text-muted-foreground shrink-0 ml-2">{p.cost.toLocaleString()}원</span>
+                    </button>
+                  ))}
+                  {/* 디저트 */}
+                  <p className="text-[10px] text-muted-foreground font-medium px-1 pt-2">디저트</p>
+                  {products.filter(p => p.category === 'dessert').map(p => (
+                    <button key={p.id} onClick={() => {
+                      setFreeSlot(freeEditState.date, freeEditState.slotIndex, { id: Math.random().toString(36).substring(2, 9), product: p, cost: p.cost })
+                      setFreeEditState(null)
+                    }} className="w-full text-left px-2 py-1.5 rounded hover:bg-secondary flex justify-between items-center text-sm">
+                      <span className="text-foreground truncate">{p.name}</span>
+                      <span className="text-xs text-muted-foreground shrink-0 ml-2">{p.cost.toLocaleString()}원</span>
+                    </button>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
           </DialogContent>
         </Dialog>
       )}

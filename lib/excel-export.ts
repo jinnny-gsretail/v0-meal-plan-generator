@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx'
-import { MealPlanDailyMeals, MealPlanTargetCosts, DosirakSets } from './store'
+import { MealPlanDailyMeals, MealPlanTargetCosts, DosirakSets, FreeFormatData } from './store'
 import { ALL_MEAL_PLANS, MEAL_PLAN_COST_CONFIGS } from './types'
 
 const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토']
@@ -23,7 +23,8 @@ export function downloadCustomerExcel(
   mealPlanTargetCosts: MealPlanTargetCosts,
   startDate: Date,
   endDate: Date,
-  dosirakSets?: DosirakSets
+  dosirakSets?: DosirakSets,
+  freeFormatData?: FreeFormatData
 ) {
   const wb = XLSX.utils.book_new()
 
@@ -44,10 +45,16 @@ export function downloadCustomerExcel(
     XLSX.utils.book_append_sheet(wb, ws, group.label)
   }
   
-  // 도시락 5개 조합 시트 (별도)
+  // 도시락 5개 조합 시트
   if (dosirakSets && Object.keys(dosirakSets).length > 0) {
     const dosirakWs = buildDosirakCustomerSheet(dosirakSets, mealPlanTargetCosts)
     XLSX.utils.book_append_sheet(wb, dosirakWs, '마)도시락')
+  }
+
+  // 프리포맷 시트
+  if (freeFormatData && Object.keys(freeFormatData).length > 0) {
+    const freeWs = buildFreeFormatSheet(freeFormatData, startDate, endDate, false)
+    XLSX.utils.book_append_sheet(wb, freeWs, '사)프리포맷')
   }
 
   const month = `${startDate.getFullYear()}년${String(startDate.getMonth() + 1).padStart(2, '0')}월`
@@ -60,7 +67,8 @@ export function downloadFactoryExcel(
   mealPlanTargetCosts: MealPlanTargetCosts,
   startDate: Date,
   endDate: Date,
-  dosirakSets?: DosirakSets
+  dosirakSets?: DosirakSets,
+  freeFormatData?: FreeFormatData
 ) {
   const wb = XLSX.utils.book_new()
 
@@ -84,6 +92,12 @@ export function downloadFactoryExcel(
   if (dosirakSets && Object.keys(dosirakSets).length > 0) {
     const dosirakWs = buildDosirakFactorySheet(dosirakSets, mealPlanTargetCosts)
     XLSX.utils.book_append_sheet(wb, dosirakWs, '마)도시락[공장]')
+  }
+
+  // 프리포맷 시트 (공장용 D-1 shift)
+  if (freeFormatData && Object.keys(freeFormatData).length > 0) {
+    const freeWs = buildFreeFormatSheet(freeFormatData, startDate, endDate, true)
+    XLSX.utils.book_append_sheet(wb, freeWs, '사)프리포맷[공장]')
   }
 
   const month = `${startDate.getFullYear()}년${String(startDate.getMonth() + 1).padStart(2, '0')}월`
@@ -211,30 +225,55 @@ function buildCustomerSheet(
   return XLSX.utils.aoa_to_sheet(aoa)
 }
 
-// 공장용 시트 빌드 (D-1 shift)
-function buildFactorySheet(
-  planNames: string[],
-  mealPlanMeals: MealPlanDailyMeals,
-  mealPlanTargetCosts: MealPlanTargetCosts,
+// 프리포맷 시트 (고객용·공장용 공통, isFactory=true 시 D-1 shift)
+function buildFreeFormatSheet(
+  freeFormatData: FreeFormatData,
   startDate: Date,
-  endDate: Date
+  endDate: Date,
+  isFactory: boolean
 ): XLSX.WorkSheet {
-  const dates = getDatesInRange(startDate, endDate)
   const aoa: (string | number)[][] = []
 
-  const firstPlan = planNames[0]
-  const ffType = firstPlan.replace(/[\d.]+$/, '')
-
-  aoa.push([`밀박스25 ${ffType} 공장 생산 식단표`, '', '', '', '', '', '', '', ''])
-  aoa.push([`※ 모든 날짜는 생산 기준일(D-1) 기준입니다.`])
-  aoa.push([`고객 수령 기간: ${formatDate(startDate)} ~ ${formatDate(endDate)}`])
+  aoa.push([`밀박스25 프리포맷 식단표${isFactory ? ' [공장 생산일 기준]' : ''}`])
+  aoa.push(['※ 원가 목표 없음 · 모든 슬롯 자유 구성'])
   aoa.push([])
 
-  const header = ['생산기준일(D-1)', '출고예정일(D-Day)', '요일(출고)', 'FF명']
-  for (const plan of planNames) {
-    const targetCost = mealPlanTargetCosts[plan] ?? MEAL_PLAN_COST_CONFIGS.find(c => c.mealPlanName === plan)?.defaultCost ?? 0
-    header.push(`${plan} 구성품`, `원가(목표:${targetCost}원)`)
+  // 날짜 범위 내 모든 날짜를 순서대로 순회
+  const dates = getDatesInRange(startDate, endDate)
+
+  // 캘린더 그리드: 헤더 행
+  const header = ['날짜', '요일', isFactory ? '배송일' : '', '슬롯1', '슬롯2', '슬롯3', '슬롯4', '슬롯5', '합계원가']
+  aoa.push(header.filter(h => h !== ''))
+
+  for (const date of dates) {
+    // 공장 뷰: 해당 셀의 표시 날짜 = 고객 수령일(=date), 생산일 = date - 1
+    const displayDate = isFactory ? new Date(date.getTime() - 86400000) : date
+    const displayDateStr = toDateStr(displayDate)
+    const customerDateStr = toDateStr(date)
+
+    const dayData = freeFormatData[customerDateStr]
+    const slots = dayData?.slots ?? []
+    const totalCost = slots.reduce((s, sl) => s + sl.cost, 0)
+
+    const slotLabels = Array.from({ length: 5 }, (_, i) => {
+      const sl = slots[i]
+      if (!sl) return ''
+      return sl.customText ?? sl.product?.name ?? ''
+    })
+
+    const row: (string | number)[] = [
+      displayDateStr,
+      DAY_NAMES[displayDate.getDay()],
+      ...(isFactory ? [customerDateStr] : []),
+      ...slotLabels,
+      totalCost > 0 ? totalCost : '',
+    ]
+    aoa.push(row)
   }
+
+  return XLSX.utils.aoa_to_sheet(aoa)
+}
+
   header.push('주차')
   aoa.push(header)
 

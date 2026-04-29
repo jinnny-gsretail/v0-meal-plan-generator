@@ -18,6 +18,25 @@ export interface MealPlanTargetCosts {
   [mealPlanName: string]: number
 }
 
+// ─── 프리포맷 ─────────────────────────────────────────────────────────────────
+// 날짜별 최대 5개 자유 슬롯 (카테고리 제약 없음, 텍스트 직접 입력 허용)
+export interface FreeSlot {
+  id: string              // 슬롯 고유 ID (드래그·이동 추적용)
+  product?: Product       // 마스터 상품 선택 시
+  customText?: string     // 텍스트 직접 입력 시
+  cost: number            // product.cost 또는 0 (custom)
+}
+
+export interface FreeDayData {
+  date: string            // YYYY-MM-DD
+  slots: FreeSlot[]       // 최대 5개
+}
+
+export interface FreeFormatData {
+  [date: string]: FreeDayData
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 // 도시락 5개 고정 조합 (날짜 대신 조합 번호 기반)
 export interface DosirakSet {
   setNumber: number // 1~5
@@ -41,14 +60,16 @@ export interface MealPlanSnapshot {
   mealPlanMeals: MealPlanDailyMeals
   mealPlanTargetCosts: MealPlanTargetCosts
   products: Product[]
-  dosirakSets?: DosirakSets // 도시락 5개 조합
+  dosirakSets?: DosirakSets
+  freeFormatData?: FreeFormatData // 프리포맷 식단
 }
 
 interface MealboxStore {
   products: Product[]
   dailyMeals: DailyMeal[]
   mealPlanMeals: MealPlanDailyMeals
-  dosirakSets: DosirakSets // 도시락 5개 고정 조합
+  dosirakSets: DosirakSets
+  freeFormatData: FreeFormatData // 프리포맷 식단
   targetCosts: { [price: number]: number } // 기존 호환용
   mealPlanTargetCosts: MealPlanTargetCosts // 식단별 목표원가
   selectedMonth: Date
@@ -92,6 +113,11 @@ interface MealboxStore {
     syncSameType: boolean
   ) => void
   
+  // 프리포맷 액션
+  setFreeSlot: (date: string, slotIndex: number, slot: FreeSlot | null) => void
+  moveFreeDay: (fromDate: string, toDate: string, mode: 'copy' | 'move') => void
+  clearFreeDay: (date: string) => void
+
   // 도시락 조합 수정
   updateDosirakSet: (
     pricePoint: number,
@@ -126,7 +152,8 @@ export const useMealboxStore = create<MealboxStore>()(
       products: [],
       dailyMeals: [],
       mealPlanMeals: {},
-      dosirakSets: {}, // 도시락 5개 고정 조합
+      dosirakSets: {},
+      freeFormatData: {},
       targetCosts: {
         3500: 1486,
         4500: 1964,
@@ -1027,6 +1054,50 @@ export const useMealboxStore = create<MealboxStore>()(
         return { dosirakSets }
       }),
 
+      // ─── 프리포맷 액션 ────────────────────────────────────────────────────────
+      setFreeSlot: (date, slotIndex, slot) => set((state) => {
+        const prev = state.freeFormatData[date] ?? { date, slots: [] }
+        const slots = [...prev.slots]
+        // 슬롯 인덱스가 비어있는 중간에도 끼워 넣을 수 있도록 처리
+        if (slot === null) {
+          slots.splice(slotIndex, 1)
+        } else if (slotIndex < slots.length) {
+          slots[slotIndex] = slot
+        } else {
+          slots.push(slot)
+        }
+        return {
+          freeFormatData: {
+            ...state.freeFormatData,
+            [date]: { date, slots: slots.slice(0, 5) },
+          }
+        }
+      }),
+
+      moveFreeDay: (fromDate, toDate, mode) => set((state) => {
+        const source = state.freeFormatData[fromDate]
+        if (!source) return state
+        const copiedSlots = source.slots.map(s => ({
+          ...s,
+          id: Math.random().toString(36).substring(2, 9), // 새 ID 부여
+        }))
+        const next: FreeFormatData = {
+          ...state.freeFormatData,
+          [toDate]: { date: toDate, slots: copiedSlots },
+        }
+        if (mode === 'move') {
+          delete next[fromDate]
+        }
+        return { freeFormatData: next }
+      }),
+
+      clearFreeDay: (date) => set((state) => {
+        const next = { ...state.freeFormatData }
+        delete next[date]
+        return { freeFormatData: next }
+      }),
+      // ──────────────────────────────────────────────────────────────────────────
+
       // 전체 식단 스냅샷 저장
       saveSnapshot: (name) => {
         const state = get()
@@ -1050,7 +1121,8 @@ export const useMealboxStore = create<MealboxStore>()(
           mealPlanMeals: JSON.parse(JSON.stringify(state.mealPlanMeals)),
           mealPlanTargetCosts: { ...state.mealPlanTargetCosts },
           products: JSON.parse(JSON.stringify(state.products)),
-          dosirakSets: JSON.parse(JSON.stringify(state.dosirakSets)), // 도시락 5개 조합
+          dosirakSets: JSON.parse(JSON.stringify(state.dosirakSets)),
+          freeFormatData: JSON.parse(JSON.stringify(state.freeFormatData)),
         }
 
         set((prev) => ({
@@ -1076,13 +1148,14 @@ export const useMealboxStore = create<MealboxStore>()(
 
         set({ snapshotStatus: 'loading', snapshotMessage: '전체 식단 복원 중...' })
 
-        // 약간의 딜레이로 로딩 상태 표시 (UX)
+        // 약간의 딜레��로 로딩 상태 표시 (UX)
         setTimeout(() => {
           set({
             mealPlanMeals: JSON.parse(JSON.stringify(snapshot.mealPlanMeals)),
             mealPlanTargetCosts: { ...snapshot.mealPlanTargetCosts },
             products: JSON.parse(JSON.stringify(snapshot.products)),
-            dosirakSets: snapshot.dosirakSets ? JSON.parse(JSON.stringify(snapshot.dosirakSets)) : {}, // 도���락 5개 조합
+            dosirakSets: snapshot.dosirakSets ? JSON.parse(JSON.stringify(snapshot.dosirakSets)) : {},
+            freeFormatData: snapshot.freeFormatData ? JSON.parse(JSON.stringify(snapshot.freeFormatData)) : {},
             startDate: new Date(snapshot.startDate),
             endDate: new Date(snapshot.endDate),
             snapshotStatus: 'success',
