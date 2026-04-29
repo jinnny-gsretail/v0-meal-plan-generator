@@ -762,18 +762,50 @@ export function MealCalendar() {
 
               {/* 연동 옵션 */}
               {isFF ? (
-                <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-secondary/50">
-                  <Checkbox id="sync-same-type" checked={syncSameType} onCheckedChange={(v) => setSyncSameType(!!v)} />
-                  <Label htmlFor="sync-same-type" className="text-sm text-foreground cursor-pointer">
-                    동일 날짜의 같은 FF 타입 전 가격대에 일괄 적용
-                  </Label>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-secondary/50">
+                    <Checkbox id="sync-same-type" checked={syncSameType} onCheckedChange={(v) => setSyncSameType(!!v)} />
+                    <Label htmlFor="sync-same-type" className="text-sm text-foreground cursor-pointer">
+                      동일 날짜의 같은 FF 타입 전 가격대에 일괄 적용
+                    </Label>
+                  </div>
+                  {editingComponent.mealPlanName.startsWith('삼각') && (
+                    <p className="text-xs text-amber-700 px-3">삼각김밥 FF 변경은 해당 식단 FF만 교체되며, 구성품(음료/디저트)은 기준 김밥 식단(삼각3.5↔김밥4.5, 삼각4.5↔김밥5.5)과의 연동을 유지합니다.</p>
+                  )}
                 </div>
               ) : (
-                <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-secondary/50">
-                  <Checkbox id="sync-related" checked={syncToRelated} onCheckedChange={(v) => setSyncToRelated(!!v)} />
-                  <Label htmlFor="sync-related" className="text-sm text-foreground cursor-pointer">
-                    이 변경사항을 모든 가격대 및 삼각김밥 식단에 적용
-                  </Label>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-secondary/50">
+                    <Checkbox id="sync-related" checked={syncToRelated} onCheckedChange={(v) => setSyncToRelated(!!v)} />
+                    <Label htmlFor="sync-related" className="text-sm text-foreground cursor-pointer">
+                      이 변경사항을 연동된 식단에 일괄 적용
+                    </Label>
+                  </div>
+                  {/* 삼각 단가 보정 연동 안내 */}
+                  {editingComponent.mealPlanName === '삼각3.5' && (
+                    <div className="flex items-start gap-1.5 px-3 py-1.5 rounded-md bg-amber-50 border border-amber-200">
+                      <span className="text-amber-600 text-xs font-semibold shrink-0 mt-0.5">단가 보정</span>
+                      <p className="text-xs text-amber-700">삼각3.5는 김밥4.5와 구성품이 연동됩니다. 수정 시 김밥4.5에도 역방향 반영됩니다.</p>
+                    </div>
+                  )}
+                  {editingComponent.mealPlanName === '삼각4.5' && (
+                    <div className="flex items-start gap-1.5 px-3 py-1.5 rounded-md bg-amber-50 border border-amber-200">
+                      <span className="text-amber-600 text-xs font-semibold shrink-0 mt-0.5">단가 보정</span>
+                      <p className="text-xs text-amber-700">삼각4.5는 김밥5.5와 구성품이 연동됩니다. 수정 시 김밥5.5에도 역방향 반영됩니다.</p>
+                    </div>
+                  )}
+                  {editingComponent.mealPlanName === '김밥4.5' && !isFF && (
+                    <div className="flex items-start gap-1.5 px-3 py-1.5 rounded-md bg-primary/5 border border-primary/20">
+                      <span className="text-primary text-xs font-semibold shrink-0 mt-0.5">연동 대상</span>
+                      <p className="text-xs text-primary/80">김밥4.5 구성품 변경 시 삼각3.5에 자동 반영됩니다. (단가 보정 연동)</p>
+                    </div>
+                  )}
+                  {editingComponent.mealPlanName === '김밥5.5' && !isFF && (
+                    <div className="flex items-start gap-1.5 px-3 py-1.5 rounded-md bg-primary/5 border border-primary/20">
+                      <span className="text-primary text-xs font-semibold shrink-0 mt-0.5">연동 대상</span>
+                      <p className="text-xs text-primary/80">김밥5.5 구성품 변경 시 삼각4.5에 자동 반영됩니다. (단가 보정 연동)</p>
+                    </div>
+                  )}
                 </div>
               )}
 

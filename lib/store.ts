@@ -642,39 +642,97 @@ export const useMealboxStore = create<MealboxStore>()(
       // 구성품 연동 수정
       updateMealComponent: (date, mealPlanName, componentType, componentIndex, newProduct, syncToRelated) => set((state) => {
         const mealPlanMeals = { ...state.mealPlanMeals }
-        
-        // 연동 대상 정의
-        // 김밥3.5(A) → 김밥4.5/5.5(A), 삼각3.5/4.5(A)
-        // 김밥4.5(B) → 김밥5.5(B), 삼각3.5/4.5(B)
-        // 김밥5.5(C) → 삼각4.5(C)
-        const getSyncTargets = (srcPlan: string, cType: 'drink' | 'dessert', cIdx: number): { plan: string; type: 'drink' | 'dessert'; idx: number }[] => {
+
+        /**
+         * 삼각 단가 보정 연동 규칙
+         * ─────────────────────────────────────────────────────
+         * 삼각3.5 구성품 = 김밥4.5 구성품 (A+B 동기화)
+         * 삼각4.5 구성품 = 김밥5.5 구성품 (A+B+C 동기화)
+         *
+         * 전파 매핑 (syncToRelated=true 시):
+         * 김밥3.5(drink=A)  → 김밥4.5/5.5(A), 샌드3.5/4.5/5.5(A)
+         *   * 삼각3.5(A)는 김밥4.5(A)와 동기화되므로 김밥4.5(A) 전파 시 자동 포함
+         *
+         * 김밥4.5(drink=A)  → 김밥5.5(A), 삼각3.5(A), 샌드4.5/5.5(A)
+         * 김밥4.5(dessert B) → 김밥5.5(B), 삼각3.5(B), 삼각4.5(B), 샌드4.5/5.5(B)
+         *
+         * 김밥5.5(drink=A)  → 삼각4.5(A)
+         * 김밥5.5(dessert B) → 삼각4.5(B)
+         * 김밥5.5(dessert C) → 삼각4.5(C), 샌드5.5(C)
+         *
+         * 삼각3.5(drink=A)  → 김밥4.5(A)  (역방향: 삼각→기준)
+         * 삼각3.5(dessert B) → 김밥4.5(B)
+         * 삼각4.5(drink=A)  → 김밥5.5(A)
+         * 삼각4.5(dessert B) → 김밥5.5(B)
+         * 삼각4.5(dessert C) → 김밥5.5(C)
+         * ─────────────────────────────────────────────────────
+         */
+        const getSyncTargets = (
+          srcPlan: string,
+          cType: 'drink' | 'dessert',
+          cIdx: number,
+        ): { plan: string; type: 'drink' | 'dessert'; idx: number }[] => {
           if (!syncToRelated) return []
-          
-          const targets: { plan: string; type: 'drink' | 'dessert'; idx: number }[] = []
-          
+
+          type T = { plan: string; type: 'drink' | 'dessert'; idx: number }
+          const t: T[] = []
+
+          // 헬퍼
+          const drink  = (plan: string): T => ({ plan, type: 'drink',   idx: 0 })
+          const dessert = (plan: string, idx: number): T => ({ plan, type: 'dessert', idx })
+
+          // ── 김밥 기준 하향 전파 ──────────────────────────────
           if (srcPlan === '김밥3.5' && cType === 'drink') {
-            // A(음료) 수정 → 김밥4.5/5.5의 A, 삼각3.5/4.5의 A, 샌드3.5/4.5/5.5의 A
-            targets.push({ plan: '김밥4.5', type: 'drink', idx: 0 })
-            targets.push({ plan: '김밥5.5', type: 'drink', idx: 0 })
-            targets.push({ plan: '삼각3.5', type: 'drink', idx: 0 })
-            targets.push({ plan: '삼각4.5', type: 'drink', idx: 0 })
-            targets.push({ plan: '샌드3.5', type: 'drink', idx: 0 })
-            targets.push({ plan: '샌드4.5', type: 'drink', idx: 0 })
-            targets.push({ plan: '샌드5.5', type: 'drink', idx: 0 })
-          } else if (srcPlan === '김밥4.5' && cType === 'dessert' && cIdx === 0) {
-            // B(디저트1) 수정 → 김밥5.5의 B, 삼각3.5/4.5의 B, 샌드4.5/5.5의 B
-            targets.push({ plan: '김밥5.5', type: 'dessert', idx: 0 })
-            targets.push({ plan: '삼각3.5', type: 'dessert', idx: 0 })
-            targets.push({ plan: '삼각4.5', type: 'dessert', idx: 0 })
-            targets.push({ plan: '샌드4.5', type: 'dessert', idx: 0 })
-            targets.push({ plan: '샌드5.5', type: 'dessert', idx: 0 })
-          } else if (srcPlan === '김밥5.5' && cType === 'dessert' && cIdx === 1) {
-            // C(디저트2) 수정 → 삼각4.5의 C, 샌드5.5의 C
-            targets.push({ plan: '삼각4.5', type: 'dessert', idx: 1 })
-            targets.push({ plan: '샌드5.5', type: 'dessert', idx: 1 })
+            // 김밥3.5(A) → 김밥4.5(A) → 삼각3.5(A) 연쇄, 김밥5.5(A), 샌드 전체(A)
+            t.push(drink('김밥4.5'), drink('김밥5.5'))
+            t.push(drink('삼각3.5'), drink('삼각4.5'))
+            t.push(drink('샌드3.5'), drink('샌드4.5'), drink('샌드5.5'))
           }
-          
-          return targets
+
+          if (srcPlan === '김밥4.5' && cType === 'drink') {
+            // 김밥4.5(A) → 삼각3.5(A), 김밥5.5(A)→삼각4.5(A), 샌드4.5/5.5(A)
+            t.push(drink('삼각3.5'))
+            t.push(drink('김밥5.5'), drink('삼각4.5'))
+            t.push(drink('샌드4.5'), drink('샌드5.5'))
+          }
+          if (srcPlan === '김밥4.5' && cType === 'dessert' && cIdx === 0) {
+            // 김밥4.5(B) → 삼각3.5(B), 김밥5.5(B), 삼각4.5(B), 샌드4.5/5.5(B)
+            t.push(dessert('삼각3.5', 0))
+            t.push(dessert('김밥5.5', 0), dessert('삼각4.5', 0))
+            t.push(dessert('샌드4.5', 0), dessert('샌드5.5', 0))
+          }
+
+          if (srcPlan === '김밥5.5' && cType === 'drink') {
+            // 김밥5.5(A) → 삼각4.5(A)
+            t.push(drink('삼각4.5'))
+          }
+          if (srcPlan === '김밥5.5' && cType === 'dessert' && cIdx === 0) {
+            // 김밥5.5(B) → 삼각4.5(B)
+            t.push(dessert('삼각4.5', 0))
+          }
+          if (srcPlan === '김밥5.5' && cType === 'dessert' && cIdx === 1) {
+            // 김밥5.5(C) → 삼각4.5(C), 샌드5.5(C)
+            t.push(dessert('삼각4.5', 1), dessert('샌드5.5', 1))
+          }
+
+          // ── 삼각 역방향 전파 (삼각 수정 시 기준 김밥도 업데이트) ──
+          if (srcPlan === '삼각3.5' && cType === 'drink') {
+            t.push(drink('김밥4.5'))
+          }
+          if (srcPlan === '삼각3.5' && cType === 'dessert' && cIdx === 0) {
+            t.push(dessert('김밥4.5', 0))
+          }
+          if (srcPlan === '삼각4.5' && cType === 'drink') {
+            t.push(drink('김밥5.5'))
+          }
+          if (srcPlan === '삼각4.5' && cType === 'dessert' && cIdx === 0) {
+            t.push(dessert('김밥5.5', 0))
+          }
+          if (srcPlan === '삼각4.5' && cType === 'dessert' && cIdx === 1) {
+            t.push(dessert('김밥5.5', 1))
+          }
+
+          return t
         }
         
         // 단일 식단 구성품 업데이트 헬퍼
