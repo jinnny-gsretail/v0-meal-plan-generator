@@ -302,14 +302,14 @@ export function downloadFactoryExcel(
   const wb = XLSX.utils.book_new()
 
   const mealGroups = [
-    { label: '가)김밥[공장]', plans: ['김밥3.5', '김밥4.5', '김밥5.5'] },
-    { label: '가-1)김밥(음X)[공장]', plans: ['김밥3.5(음X)'] },
-    { label: '나)삼각[공장]', plans: ['삼각3.5', '삼각4.5'] },
-    { label: '나-1)삼각(음X)[공장]', plans: ['삼각3.5(음X)'] },
-    { label: '다)샌드[공장]', plans: ['샌드3.5', '샌드4.5', '샌드5.5'] },
-    { label: '다-1)샌드(음X)[공장]', plans: ['샌드3.5(음X)'] },
-    { label: '라)버거[공장]', plans: ['버거3.5', '버거4.5', '버거5.5'] },
-    { label: '바)공장박스[공장]', plans: ['공장박스'] },
+    { label: '가)김밥_공장', plans: ['김밥3.5', '김밥4.5', '김밥5.5'] },
+    { label: '가-1)김밥(음X)_공장', plans: ['김밥3.5(음X)'] },
+    { label: '나)삼각_공장', plans: ['삼각3.5', '삼각4.5'] },
+    { label: '나-1)삼각(음X)_공장', plans: ['삼각3.5(음X)'] },
+    { label: '다)샌드_공장', plans: ['샌드3.5', '샌드4.5', '샌드5.5'] },
+    { label: '다-1)샌드(음X)_공장', plans: ['샌드3.5(음X)'] },
+    { label: '라)버거_공장', plans: ['버거3.5', '버거4.5', '버거5.5'] },
+    { label: '바)공장박스_공장', plans: ['공장박스'] },
   ]
 
   for (const group of mealGroups) {
@@ -320,13 +320,13 @@ export function downloadFactoryExcel(
   // 도시락 시트
   if (dosirakSets && Object.keys(dosirakSets).length > 0) {
     const dosirakWs = buildDosirakFactorySheet(dosirakSets, mealPlanTargetCosts)
-    XLSX.utils.book_append_sheet(wb, dosirakWs, '마)도시락[공장]')
+    XLSX.utils.book_append_sheet(wb, dosirakWs, '마)도시락_공장')
   }
 
   // 프리포맷 시트
   if (freeFormatData && Object.keys(freeFormatData).length > 0) {
     const freeWs = buildFreeFormatFactorySheet(freeFormatData, startDate, endDate)
-    XLSX.utils.book_append_sheet(wb, freeWs, '사)프리포맷[공장]')
+    XLSX.utils.book_append_sheet(wb, freeWs, '사)프리포맷_공장')
   }
 
   const month = `${startDate.getFullYear()}년${String(startDate.getMonth() + 1).padStart(2, '0')}월`
