@@ -72,6 +72,8 @@ export function MealCalendar() {
   const [syncToRelated, setSyncToRelated] = useState(true)
   // FF 수정 시 동일 가격대 전체 연동
   const [syncSameType, setSyncSameType] = useState(true)
+  // 금요일 삼각박스 컵라면 필수 규칙 강제 변경 허용 여부
+  const [cupRamenOverride, setCupRamenOverride] = useState(false)
   
   // 스냅샷 다이얼로그 상태
   const [showSaveDialog, setShowSaveDialog] = useState(false)
@@ -337,19 +339,31 @@ export function MealCalendar() {
         .sort((a, b) => a.cost - b.cost)
     }
 
+    // 금요일 삼각박스 컵라면 슬롯: override 없으면 컵라면 그룹만 표시
+    const editDate = editingComponent?.date
+    const editDow = editDate ? new Date(editDate).getDay() : -1
+    const isEditFridaySamgak = editDow === 5 && (editingComponent?.mealPlanName.startsWith('삼각') ?? false)
+    const isEditCupRamenSlot = isEditFridaySamgak && componentType === 'dessert' && componentIndex === 0
+
     let pool: Product[] = []
     if (componentType === 'drink') {
       pool = products.filter(p => p.category === 'drink')
       if (!isYogurtAllowed) pool = pool.filter(p => p.group !== '요거트')
     } else {
       pool = products.filter(p => p.category === 'dessert')
-      if (!isYogurtAllowed) pool = pool.filter(p => p.group !== '요거트')
-      if (isMonday && hasYogurtDrink) pool = pool.filter(p => p.group !== '요거트')
+      // 컵라면 슬롯: override 없으면 컵라면 그룹만 노출
+      if (isEditCupRamenSlot && !cupRamenOverride) {
+        const cupRamenOnly = pool.filter(p => p.group === '컵라면')
+        pool = cupRamenOnly.length > 0 ? cupRamenOnly : pool
+      } else {
+        if (!isYogurtAllowed) pool = pool.filter(p => p.group !== '요거트')
+        if (isMonday && hasYogurtDrink) pool = pool.filter(p => p.group !== '요거트')
+      }
     }
 
     return pool.sort((a, b) => a.cost - b.cost)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingComponent?.date, editingComponent?.componentType, editingComponent?.mealPlanName, products, currentMealPlanData, currentMealPlanInfo?.price])
+  }, [editingComponent?.date, editingComponent?.componentType, editingComponent?.mealPlanName, editingComponent?.componentIndex, products, currentMealPlanData, currentMealPlanInfo?.price, cupRamenOverride])
 
   // 상품 선택 핸들러 (FF / 음료 / 디저트 통합)
   const handleSelectProduct = (product: Product) => {
@@ -379,6 +393,7 @@ export function MealCalendar() {
     currentProduct: Product | null
   ) => {
     if (!selectedMealPlan) return
+    setCupRamenOverride(false) // 다이얼로그 열 때마다 override 리셋
     setEditingComponent({ date, mealPlanName: selectedMealPlan, componentType, componentIndex, currentProduct })
   }
 
@@ -753,6 +768,12 @@ export function MealCalendar() {
                   </div>
                   {inRange && composition && (
                     <div className="space-y-0.5">
+                      {/* 금요일 삼각박스 컵라면 필수 뱃지 */}
+                      {dateInfo.dayOfWeek === 5 && selectedMealPlan?.startsWith('삼각') && (
+                        <div className="text-[8px] leading-tight px-0.5 py-px rounded bg-orange-100 text-orange-700 font-medium truncate">
+                          컵라면 필수
+                        </div>
+                      )}
                       {/* FF */}
                       {composition.ff && (
                         <div className={`text-[9px] leading-tight px-0.5 py-px rounded truncate ${FF_COLOR.bg} ${FF_COLOR.text}`}>
@@ -931,6 +952,14 @@ export function MealCalendar() {
         const dayOfWeek = new Date(editingComponent.date).getDay()
         const isWedToSun = dayOfWeek === 0 || dayOfWeek >= 3
         const isMonday = dayOfWeek === 1
+        const isFriday = dayOfWeek === 5
+
+        // 금요일 삼각박스 컵라면 필수 슬롯 여부
+        const isSamgakPlan = editingComponent.mealPlanName.startsWith('삼각')
+        const isFridaySamgak = isFriday && isSamgakPlan
+        // 컵라면 슬롯: 삼각3.5/4.5는 desserts[0], 삼각3.5(음X)는 desserts[0]이 컵라면
+        const isCupRamenSlot = isFridaySamgak && !isFF && editingComponent.componentType === 'dessert' && editingComponent.componentIndex === 0
+        const isCupRamenProduct = editingComponent.currentProduct?.group === '컵라면'
 
         // 주간 FF 사용 횟수 (중복 경고용)
         const weeklyFFCount = isFF
@@ -1007,9 +1036,32 @@ export function MealCalendar() {
                 </div>
               )}
 
+              {/* 금요일 삼각박스 컵라면 필수 경고 */}
+              {isCupRamenSlot && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-semibold text-amber-800">금요일은 컵라면 필수 구성일입니다</p>
+                      <p className="text-xs text-amber-700 mt-0.5">삼각박스 금요일 식단에는 컵라면 그룹 상품이 반드시 포함되어야 합니다. 다른 카테고리로 변경하려면 강제 변경을 허용해주세요.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pl-6">
+                    <Checkbox
+                      id="cup-ramen-override"
+                      checked={cupRamenOverride}
+                      onCheckedChange={(v) => setCupRamenOverride(!!v)}
+                    />
+                    <Label htmlFor="cup-ramen-override" className="text-xs text-amber-800 cursor-pointer">
+                      강제 변경 허용 (실무자 판단)
+                    </Label>
+                  </div>
+                </div>
+              )}
+
               {/* 제약 안내 */}
               <div className="flex flex-col gap-1 px-1">
-                {!isFF && isWedToSun && (
+                {!isFF && isWedToSun && !isCupRamenSlot && (
                   <p className="text-xs text-amber-600">수~일요일: 요거트 상품이 목록에서 제외됩니다.</p>
                 )}
                 {!isFF && isMonday && (
