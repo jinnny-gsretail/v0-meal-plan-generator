@@ -676,7 +676,7 @@ export const useMealboxStore = create<MealboxStore>()(
         set({ dosirakSets })
 
         // ========== 음X 식단 생성 (음료 제외, 4.5 기준 B+C 연동) ==========
-        // 김밥3.5(음X): 김밥4.5의 FF + B + C (음료 제외)
+        // 김밥3.5(음X): 김밥4.5��� FF + B + C (음료 제외)
         // 샌드3.5(음X): 샌드4.5의 FF + B + C (음료 제외)
         // 삼각3.5(음X): 삼각4.5의 FF + B + C (음료 제외)
         const noDrinkMappings: { target: string; source: string; ffType: FFType }[] = [
@@ -707,22 +707,6 @@ export const useMealboxStore = create<MealboxStore>()(
             const desserts: Product[] = []
             if (comp45?.desserts?.[0]) desserts.push(comp45.desserts[0])
             if (dessertC) desserts.push(dessertC)
-
-            const totalCost = ff.cost + desserts.reduce((s, d) => s + d.cost, 0)
-
-            return {
-              date: meal.date,
-              compositions: {
-                3500: {
-                  ff,
-                  drink: undefined, // 음료 제외
-                  desserts,
-                  totalCost,
-                }
-              }
-            }
-          })
-        }
 
             const totalCost = ff.cost + desserts.reduce((s, d) => s + d.cost, 0)
 
