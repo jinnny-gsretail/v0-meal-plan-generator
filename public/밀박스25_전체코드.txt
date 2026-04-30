@@ -1,0 +1,1428 @@
+================================================================================
+밀박스25 자동 큐레이션 툴 - 전체 소스코드
+생성일: 2026-04-30
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+[1] next.config.mjs
+────────────────────────────────────────────────────────────────────────────────
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  images: {
+    unoptimized: true,
+  },
+}
+
+export default nextConfig
+
+
+────────────────────────────────────────────────────────────────────────────────
+[2] app/globals.css
+────────────────────────────────────────────────────────────────────────────────
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* 라이트 모드만 사용 - 다크 모드 비활성화 */
+
+:root {
+  --background: oklch(0.98 0 0);
+  --foreground: oklch(0.15 0.01 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.01 260);
+  --primary: oklch(0.55 0.2 250);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.93 0.01 260);
+  --secondary-foreground: oklch(0.15 0.01 260);
+  --muted: oklch(0.93 0.01 260);
+  --muted-foreground: oklch(0.45 0 0);
+  --accent: oklch(0.55 0.2 250);
+  --accent-foreground: oklch(1 0 0);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.88 0.01 260);
+  --input: oklch(0.93 0.01 260);
+  --ring: oklch(0.55 0.2 250);
+  --chart-1: oklch(0.55 0.2 250);
+  --chart-2: oklch(0.6 0.15 200);
+  --chart-3: oklch(0.55 0.12 280);
+  --chart-4: oklch(0.7 0.15 80);
+  --chart-5: oklch(0.6 0.2 30);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.97 0.01 260);
+  --sidebar-foreground: oklch(0.15 0.01 260);
+  --sidebar-primary: oklch(0.55 0.2 250);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.93 0.01 260);
+  --sidebar-accent-foreground: oklch(0.15 0.01 260);
+  --sidebar-border: oklch(0.88 0.01 260);
+  --sidebar-ring: oklch(0.55 0.2 250);
+  
+  /* Custom colors for meal categories */
+  --ff-color: oklch(0.5 0.2 290);
+  --drink-color: oklch(0.45 0.15 200);
+  --dessert-color: oklch(0.6 0.15 80);
+  --dosirak-color: oklch(0.55 0.2 30);
+}
+
+@theme inline {
+  --font-sans: 'Geist', 'Geist Fallback';
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-ff: var(--ff-color);
+  --color-drink: var(--drink-color);
+  --color-dessert: var(--dessert-color);
+  --color-dosirak: var(--dosirak-color);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+[3] app/layout.tsx
+────────────────────────────────────────────────────────────────────────────────
+import type { Metadata } from 'next'
+import { Geist, Geist_Mono } from 'next/font/google'
+import { Analytics } from '@vercel/analytics/next'
+import './globals.css'
+
+const _geist = Geist({ subsets: ["latin"] });
+const _geistMono = Geist_Mono({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: '밀박스25 자동 큐레이션',
+  description: '밀박스25 식단 자동 큐레이션 툴 - 가격대별 식단 자동 생성',
+  generator: 'v0.app',
+  icons: {
+    icon: [
+      { url: '/icon-light-32x32.png', media: '(prefers-color-scheme: light)' },
+      { url: '/icon-dark-32x32.png', media: '(prefers-color-scheme: dark)' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    apple: '/apple-icon.png',
+  },
+}
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode
+}>) {
+  return (
+    <html lang="ko" className="light bg-background" style={{ colorScheme: 'light' }}>
+      <body className="font-sans antialiased bg-background text-foreground">
+        {children}
+        {process.env.NODE_ENV === 'production' && <Analytics />}
+      </body>
+    </html>
+  )
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+[4] app/page.tsx
+────────────────────────────────────────────────────────────────────────────────
+'use client'
+
+import { useState } from 'react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Header } from '@/components/header'
+import { ProductManager } from '@/components/product-manager'
+import { ExcelUploader } from '@/components/excel-uploader'
+import { CostSettings } from '@/components/cost-settings'
+import { MealCalendar } from '@/components/meal-calendar'
+import { MealPlanSelector } from '@/components/meal-plan-selector'
+import { DateRangeSelector } from '@/components/date-range-selector'
+import { Package, Settings, Calendar } from 'lucide-react'
+
+export default function Home() {
+  const [activeTab, setActiveTab] = useState('products')
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Header />
+      
+      <main className="container mx-auto px-4 py-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <div className="flex items-center justify-between gap-4">
+            <TabsList className="bg-card border border-border">
+              <TabsTrigger value="products" className="gap-2">
+                <Package className="w-4 h-4" />
+                상품 관리
+              </TabsTrigger>
+              <TabsTrigger value="settings" className="gap-2">
+                <Settings className="w-4 h-4" />
+                원가 설정
+              </TabsTrigger>
+              <TabsTrigger value="calendar" className="gap-2">
+                <Calendar className="w-4 h-4" />
+                식단 캘린더
+              </TabsTrigger>
+            </TabsList>
+            <DateRangeSelector />
+          </div>
+          
+          <TabsContent value="products" className="space-y-6">
+            <div className="rounded-lg border border-border bg-card p-6">
+              <ExcelUploader />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-foreground mb-4">또는 수동으로 상품 관리</h3>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <ProductManager category="ff" title="FF (김밥/주먹밥/샌드/버거/도시락)" />
+                <ProductManager category="drink" title="음료" />
+                <ProductManager category="dessert" title="디저트" />
+              </div>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <h3 className="font-semibold text-foreground mb-3">사용 가이드</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-muted-foreground">
+                <div className="p-3 bg-secondary/30 rounded-lg">
+                  <div className="font-medium text-foreground mb-1">1단계: 상품 등록</div>
+                  <p>엑셀 파일을 드래그하거나 수동으로 상품을 등록하세요.</p>
+                </div>
+                <div className="p-3 bg-secondary/30 rounded-lg">
+                  <div className="font-medium text-foreground mb-1">2단계: 원가 설정</div>
+                  <p>가격대별 목표 원가를 설정하세요.</p>
+                </div>
+                <div className="p-3 bg-secondary/30 rounded-lg">
+                  <div className="font-medium text-foreground mb-1">3단계: 자동 생성</div>
+                  <p>식단 자동 생성 버튼을 클릭하면 캘린더에 식단이 자동으로 구성됩니다.</p>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="settings">
+            <div className="max-w-2xl">
+              <CostSettings />
+              <div className="mt-6 rounded-lg border border-border bg-card p-4">
+                <h3 className="font-semibold text-foreground mb-3">가격대별 구성 안내</h3>
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg">
+                    <span className="font-mono text-primary font-medium">3,500원</span>
+                    <span className="text-muted-foreground">FF(김밥/주먹밥/샌드/버거) + 음료</span>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg">
+                    <span className="font-mono text-primary font-medium">4,500원</span>
+                    <span className="text-muted-foreground">FF(김밥/주먹밥/샌드/버거) + 음료 + 디저트 1개</span>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg">
+                    <span className="font-mono text-primary font-medium">5,500원</span>
+                    <span className="text-muted-foreground">FF(김밥/주먹밥/샌드/버거) + 음료 + 디저트 2개</span>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 bg-secondary/30 rounded-lg">
+                    <span className="font-mono text-primary font-medium">6,500원</span>
+                    <span className="text-muted-foreground">도시락 + 음료 + 디저트 1개 (도시락만 운영)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="calendar" className="space-y-6">
+            <MealPlanSelector />
+            <MealCalendar />
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded bg-primary/20" />
+                <span>식단 구성 완료</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded bg-destructive/20" />
+                <span>원가 초과</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded bg-muted" />
+                <span>구성 불가 (상품 부족)</span>
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </main>
+    </div>
+  )
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+[5] app/api/parse-image/route.ts
+────────────────────────────────────────────────────────────────────────────────
+import { generateText } from 'ai'
+import { gateway } from '@ai-sdk/gateway'
+import { NextRequest, NextResponse } from 'next/server'
+
+export async function POST(req: NextRequest) {
+  try {
+    const { imageBase64, category } = await req.json()
+    
+    if (!imageBase64) {
+      return NextResponse.json({ error: 'No image provided' }, { status: 400 })
+    }
+
+    let prompt = ''
+    if (category === 'ff') {
+      prompt = `이 이미지는 FF(김밥/주먹밥/샌드/버거/도시락) 상품 리스트입니다.
+이미지에서 다음 정보를 추출해주세요:
+- 중분류 (김밥, 주먹밥, 샌드, 버거, 도시락 중 하나)
+- 상품명
+- 원가 (숫자만)
+
+JSON 배열 형식으로만 응답해주세요. 다른 텍스트 없이 JSON만 출력하세요.
+형식: [{"ffType": "주먹밥", "name": "상품명", "cost": 1000}, ...]`
+    } else {
+      prompt = `이 이미지는 ${category === 'drink' ? '음료' : '디저트'} 상품 리스트입니다.
+이미지에서 다음 정보를 추출해주세요:
+- 그룹 (${category === 'drink' ? '건강, 주스, 탄산, 주스/차 등' : '당류, 탄수화물, 프레시, 단백질 등'})
+- 상품명
+- 원가 (숫자만)
+
+JSON 배열 형식으로만 응답해주세요. 다른 텍스트 없이 JSON만 출력하세요.
+형식: [{"group": "그룹명", "name": "상품명", "cost": 1000}, ...]`
+    }
+
+    const result = await generateText({
+      model: gateway('openai/gpt-4o-mini'),
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', image: imageBase64 },
+            { type: 'text', text: prompt },
+          ],
+        },
+      ],
+    })
+
+    let parsedProducts = []
+    try {
+      const jsonMatch = result.text.match(/\[[\s\S]*\]/)
+      if (jsonMatch) {
+        parsedProducts = JSON.parse(jsonMatch[0])
+      }
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError)
+      return NextResponse.json({ error: 'Failed to parse product data', raw: result.text }, { status: 500 })
+    }
+
+    const products = parsedProducts.map((p: Record<string, unknown>) => ({
+      name: String(p.name || ''),
+      cost: parseInt(String(p.cost || '0')),
+      category,
+      ...(category === 'ff' ? { ffType: p.ffType } : { group: p.group }),
+    })).filter((p: { name: string; cost: number }) => p.name && p.cost > 0)
+
+    return NextResponse.json({ products })
+  } catch (error) {
+    console.error('Image parsing error:', error)
+    return NextResponse.json({ error: 'Failed to process image' }, { status: 500 })
+  }
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+[6] lib/types.ts
+────────────────────────────────────────────────────────────────────────────────
+export type FFType = '김밥' | '주먹밥' | '샌드' | '버거' | '도시락'
+
+export type MealPlanFFType = '김밥' | '삼각' | '샌드' | '버거' | '도시락'
+export type MealPlanPrice = '3.5' | '4.5' | '5.5' | '6.5'
+export type MealPlanName = `${MealPlanFFType}${MealPlanPrice}`
+
+export const MEAL_PLAN_FF_TYPES: { type: MealPlanFFType; ffType: FFType }[] = [
+  { type: '김밥', ffType: '김밥' },
+  { type: '삼각', ffType: '주먹밥' },
+  { type: '샌드', ffType: '샌드' },
+  { type: '버거', ffType: '버거' },
+  { type: '도시락', ffType: '도시락' },
+]
+
+export const MEAL_PLAN_PRICES: { label: MealPlanPrice; value: number }[] = [
+  { label: '3.5', value: 3500 },
+  { label: '4.5', value: 4500 },
+  { label: '5.5', value: 5500 },
+  { label: '6.5', value: 6500 },
+]
+
+export interface MealPlanCostConfig {
+  name: string
+  mealPlanName: MealPlanName
+  description: string
+  defaultCost: number
+  ffType: FFType
+  pricePoint: number
+}
+
+export const MEAL_PLAN_COST_CONFIGS: MealPlanCostConfig[] = [
+  // 김밥 식단
+  { name: '김밥3', mealPlanName: '김밥3.5', description: 'FF + 음료', defaultCost: 1486, ffType: '김밥', pricePoint: 3500 },
+  { name: '김밥4', mealPlanName: '김밥4.5', description: 'FF + 음료 + 디저트1', defaultCost: 1964, ffType: '김밥', pricePoint: 4500 },
+  { name: '김밥5', mealPlanName: '김밥5.5', description: 'FF + 음료 + 디저트2', defaultCost: 2430, ffType: '김밥', pricePoint: 5500 },
+  { name: '김밥3(음X)', mealPlanName: '김밥3.5(음X)' as MealPlanName, description: 'FF + 디저트B + 디저트C (음료 제외)', defaultCost: 1486, ffType: '김밥', pricePoint: 3500 },
+  // 삼각 식단
+  { name: '삼각3', mealPlanName: '삼각3.5', description: 'FF + 음료 + 디저트1', defaultCost: 1486, ffType: '주먹밥', pricePoint: 3500 },
+  { name: '삼각4', mealPlanName: '삼각4.5', description: 'FF + 음료 + 디저트2', defaultCost: 1964, ffType: '주먹밥', pricePoint: 4500 },
+  { name: '삼각3(음X)', mealPlanName: '삼각3.5(음X)' as MealPlanName, description: 'FF + 디저트B + 디저트C (음료 제외)', defaultCost: 1486, ffType: '주먹밥', pricePoint: 3500 },
+  // 버거 식단
+  { name: '버거3', mealPlanName: '버거3.5', description: 'FF + 탄산음료', defaultCost: 1486, ffType: '버거', pricePoint: 3500 },
+  { name: '버거4', mealPlanName: '버거4.5', description: 'FF + 탄산음료 + 디저트1', defaultCost: 1964, ffType: '버거', pricePoint: 4500 },
+  { name: '버거5', mealPlanName: '버거5.5', description: 'FF + 탄산음료 + 디저트2', defaultCost: 2430, ffType: '버거', pricePoint: 5500 },
+  { name: '샌드3(음X)', mealPlanName: '샌드3.5(음X)' as MealPlanName, description: 'FF + 디저트B + 디저트C (음료 제외)', defaultCost: 1486, ffType: '샌드', pricePoint: 3500 },
+  // 도시락 식단
+  { name: '도시락4.5', mealPlanName: '도시락4.5', description: '도시락 + 음료', defaultCost: 2196, ffType: '도시락', pricePoint: 4500 },
+  { name: '도시락5.5', mealPlanName: '도시락5.5', description: '도시락 + 음료 + 디저트1', defaultCost: 2694, ffType: '도시락', pricePoint: 5500 },
+  { name: '도시락6.5', mealPlanName: '도시락6.5', description: '도시락 + 음료 + 디저트1', defaultCost: 3191, ffType: '도시락', pricePoint: 6500 },
+  // 공장박스 (특수)
+  { name: '공장박스', mealPlanName: '공장박스' as MealPlanName, description: '월:샌드단품 / 화~일:삼각김밥+음료 (고정 원가)', defaultCost: 963, ffType: '샌드', pricePoint: 3500 },
+]
+
+// 식단 표시용 (음X 포함)
+export const ALL_MEAL_PLANS: { name: MealPlanName | string; ffType: FFType; price: number; isNoDrink?: boolean }[] = [
+  // 김밥
+  { name: '김밥3.5', ffType: '김밥', price: 3500 },
+  { name: '김밥4.5', ffType: '김밥', price: 4500 },
+  { name: '김밥5.5', ffType: '김밥', price: 5500 },
+  { name: '김밥3.5(음X)', ffType: '김밥', price: 3500, isNoDrink: true },
+  // 삼각 (5.5 제외)
+  { name: '삼각3.5', ffType: '주먹밥', price: 3500 },
+  { name: '삼각4.5', ffType: '주먹밥', price: 4500 },
+  { name: '삼각3.5(음X)', ffType: '주먹밥', price: 3500, isNoDrink: true },
+  // 샌드
+  { name: '샌드3.5', ffType: '샌드', price: 3500 },
+  { name: '샌드4.5', ffType: '샌드', price: 4500 },
+  { name: '샌드5.5', ffType: '샌드', price: 5500 },
+  { name: '샌드3.5(음X)', ffType: '샌드', price: 3500, isNoDrink: true },
+  // 버거
+  { name: '버거3.5', ffType: '버거', price: 3500 },
+  { name: '버거4.5', ffType: '버거', price: 4500 },
+  { name: '버거5.5', ffType: '버거', price: 5500 },
+  // 도시락
+  { name: '도시락4.5', ffType: '도시락', price: 4500 },
+  { name: '도시락5.5', ffType: '도시락', price: 5500 },
+  { name: '도시락6.5', ffType: '도시락', price: 6500 },
+  // 공장박스 (특수)
+  { name: '공장박스', ffType: '샌드', price: 3500 },
+  // 프리포맷 (자유 편집)
+  { name: '프리포맷', ffType: '김밥', price: 0 },
+]
+
+export const DRINK_GROUP_BY_DAY: { [day: number]: string } = {
+  0: '주스',  1: '건강',  2: '주스',  3: '탄산',  4: '건강',  5: '주스',  6: '주스',
+}
+
+export const DESSERT1_GROUP_BY_DAY: { [day: number]: string } = {
+  0: '단백질',  1: '프레시',  2: '탄수화물',  3: '단백질',  4: '당류',  5: '탄수화물',  6: '탄수화물',
+}
+
+export const DESSERT2_GROUPS_BY_DAY: { [day: number]: string[] } = {
+  0: ['탄수화물'],
+  1: ['프레시', '탄수화물'],
+  2: ['프레시', '단백질'],
+  3: ['탄수화물', '당류'],
+  4: ['탄수화물', '단백질'],
+  5: ['당류', '단백질'],
+  6: ['단백질'],
+}
+
+export interface Product {
+  id: string
+  name: string
+  cost: number
+  category: 'ff' | 'drink' | 'dessert'
+  ffType?: FFType
+  group?: string
+}
+
+export interface MealComposition {
+  ff?: Product
+  drink?: Product
+  desserts: Product[]
+  totalCost: number
+}
+
+export interface DailyMeal {
+  date: string
+  compositions: {
+    [pricePoint: number]: MealComposition | null
+  }
+}
+
+export interface PricePointConfig {
+  price: number
+  targetCost: number
+  composition: {
+    ff: boolean
+    ffType?: 'dosirak' | 'any'
+    drink: boolean
+    dessertCount: number
+  }
+}
+
+export const PRICE_POINT_CONFIGS: PricePointConfig[] = [
+  { price: 3500, targetCost: 1486, composition: { ff: true, ffType: 'any', drink: true, dessertCount: 0 } },
+  { price: 4500, targetCost: 1964, composition: { ff: true, ffType: 'any', drink: true, dessertCount: 1 } },
+  { price: 5500, targetCost: 2430, composition: { ff: true, ffType: 'any', drink: true, dessertCount: 2 } },
+  { price: 6500, targetCost: 3191, composition: { ff: true, ffType: 'dosirak', drink: true, dessertCount: 1 } },
+]
+
+
+────────────────────────────────────────────────────────────────────────────────
+[7] lib/utils.ts
+────────────────────────────────────────────────────────────────────────────────
+import { clsx, type ClassValue } from 'clsx'
+import { twMerge } from 'tailwind-merge'
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+[8] lib/store.ts
+────────────────────────────────────────────────────────────────────────────────
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+import { 
+  Product, 
+  DailyMeal, 
+  MealComposition, 
+  MealPlanName,
+  MEAL_PLAN_COST_CONFIGS
+} from './types'
+
+// 식단별 일일 구성
+export interface MealPlanDailyMeals {
+  [mealPlanName: string]: DailyMeal[]
+}
+
+// 식단별 목표원가
+export interface MealPlanTargetCosts {
+  [mealPlanName: string]: number
+}
+
+// ─── 프리포맷 ──────────────────────────────────────────────────────────────────
+export interface FreeSlot {
+  id: string
+  product?: Product
+  customText?: string
+  cost: number
+}
+
+export interface FreeDayData {
+  date: string
+  slots: FreeSlot[]
+}
+
+export interface FreeFormatData {
+  [date: string]: FreeDayData
+}
+// ──────────────────────────────────────────────────────────────────────────────
+
+// 도시락 5개 고정 조합
+export interface DosirakSet {
+  setNumber: number
+  ff?: Product
+  drink?: Product
+  desserts: Product[]
+  totalCost: number
+}
+
+export interface DosirakSets {
+  [pricePoint: number]: DosirakSet[]
+}
+
+// 전체 식단 스냅샷 (저장/불러오기용)
+export interface MealPlanSnapshot {
+  id: string
+  name: string
+  createdAt: string
+  startDate: string
+  endDate: string
+  mealPlanMeals: MealPlanDailyMeals
+  mealPlanTargetCosts: MealPlanTargetCosts
+  products: Product[]
+  dosirakSets?: DosirakSets
+  freeFormatData?: FreeFormatData
+}
+
+interface MealboxStore {
+  products: Product[]
+  dailyMeals: DailyMeal[]
+  mealPlanMeals: MealPlanDailyMeals
+  dosirakSets: DosirakSets
+  freeFormatData: FreeFormatData
+  targetCosts: { [price: number]: number }
+  mealPlanTargetCosts: MealPlanTargetCosts
+  selectedMonth: Date
+  selectedMealPlan: MealPlanName | null
+  startDate: Date | null
+  endDate: Date | null
+  
+  addProduct: (product: Omit<Product, 'id'>) => void
+  addProducts: (products: Omit<Product, 'id'>[]) => void
+  setProducts: (products: Omit<Product, 'id'>[]) => void
+  updateProduct: (id: string, product: Partial<Product>) => void
+  deleteProduct: (id: string) => void
+  clearProducts: (category?: 'ff' | 'drink' | 'dessert') => void
+  setTargetCost: (price: number, cost: number) => void
+  setMealPlanTargetCost: (mealPlan: string, cost: number) => void
+  setSelectedMonth: (date: Date) => void
+  setSelectedMealPlan: (mealPlan: MealPlanName | null) => void
+  setStartDate: (date: Date | null) => void
+  setEndDate: (date: Date | null) => void
+  generateMeals: () => void
+  updateMealComposition: (date: string, pricePoint: number, composition: MealComposition | null) => void
+  updateMealComponent: (
+    date: string,
+    mealPlanName: string,
+    componentType: 'drink' | 'dessert',
+    componentIndex: number,
+    newProduct: Product,
+    syncToRelated: boolean
+  ) => void
+  updateFF: (
+    date: string,
+    mealPlanName: string,
+    newFF: Product,
+    syncSameType: boolean
+  ) => void
+  setFreeSlot: (date: string, slotIndex: number, slot: FreeSlot | null) => void
+  moveFreeDay: (fromDate: string, toDate: string, mode: 'copy' | 'move') => void
+  clearFreeDay: (date: string) => void
+  updateDosirakSet: (
+    pricePoint: number,
+    setNumber: number,
+    updates: Partial<Omit<DosirakSet, 'setNumber'>>
+  ) => void
+  snapshots: MealPlanSnapshot[]
+  snapshotStatus: 'idle' | 'saving' | 'loading' | 'success' | 'error'
+  snapshotMessage: string | null
+  saveSnapshot: (name: string) => void
+  loadSnapshot: (id: string) => void
+  deleteSnapshot: (id: string) => void
+  clearSnapshotStatus: () => void
+}
+
+const generateId = () => Math.random().toString(36).substring(2, 9)
+
+const getDefaultMealPlanTargetCosts = (): MealPlanTargetCosts => {
+  const costs: MealPlanTargetCosts = {}
+  MEAL_PLAN_COST_CONFIGS.forEach(config => {
+    costs[config.mealPlanName] = config.defaultCost
+  })
+  return costs
+}
+
+export const useMealboxStore = create<MealboxStore>()(
+  persist(
+    (set, get) => ({
+      products: [],
+      dailyMeals: [],
+      mealPlanMeals: {},
+      dosirakSets: {},
+      freeFormatData: {},
+      targetCosts: { 3500: 1486, 4500: 1964, 5500: 2430, 6500: 3191 },
+      mealPlanTargetCosts: getDefaultMealPlanTargetCosts(),
+      selectedMonth: new Date(),
+      selectedMealPlan: null,
+      startDate: null,
+      endDate: null,
+      snapshots: [],
+      snapshotStatus: 'idle',
+      snapshotMessage: null,
+      
+      addProduct: (product) => set((state) => ({
+        products: [...state.products, { ...product, id: generateId() }]
+      })),
+      addProducts: (products) => set((state) => ({
+        products: [...state.products, ...products.map(p => ({ ...p, id: generateId() }))]
+      })),
+      setProducts: (products) => set({
+        products: products.map(p => ({ ...p, id: generateId() }))
+      }),
+      updateProduct: (id, updates) => set((state) => ({
+        products: state.products.map(p => p.id === id ? { ...p, ...updates } : p)
+      })),
+      deleteProduct: (id) => set((state) => ({
+        products: state.products.filter(p => p.id !== id)
+      })),
+      clearProducts: (category) => set((state) => ({
+        products: category 
+          ? state.products.filter(p => p.category !== category)
+          : []
+      })),
+      setTargetCost: (price, cost) => set((state) => ({
+        targetCosts: { ...state.targetCosts, [price]: cost }
+      })),
+      setMealPlanTargetCost: (mealPlan, cost) => set((state) => ({
+        mealPlanTargetCosts: { ...state.mealPlanTargetCosts, [mealPlan]: cost }
+      })),
+      setSelectedMonth: (date) => set({ selectedMonth: date }),
+      setSelectedMealPlan: (mealPlan) => set({ selectedMealPlan: mealPlan }),
+      setStartDate: (date) => set({ startDate: date }),
+      setEndDate: (date) => set({ endDate: date }),
+      
+      generateMeals: () => {
+        const { products, mealPlanTargetCosts, startDate: storedStartDate, endDate: storedEndDate } = get()
+
+        const drinkProducts = products.filter(p => p.category === 'drink')
+        const dessertProducts = products.filter(p => p.category === 'dessert')
+
+        const startDate = storedStartDate instanceof Date ? storedStartDate : storedStartDate ? new Date(storedStartDate) : new Date()
+        const endDate = storedEndDate instanceof Date ? storedEndDate : storedEndDate ? new Date(storedEndDate) : new Date()
+
+        const dates: Date[] = []
+        const cur = new Date(startDate)
+        while (cur <= endDate) {
+          dates.push(new Date(cur))
+          cur.setDate(cur.getDate() + 1)
+        }
+        if (dates.length === 0) return
+
+        const mealPlanMeals: MealPlanDailyMeals = {}
+
+        const getTarget = (name: string) =>
+          mealPlanTargetCosts[name] ??
+          MEAL_PLAN_COST_CONFIGS.find(c => c.mealPlanName === name)?.defaultCost ??
+          1500
+
+        const ALL_DRINK_GROUPS = ['탄산', '건강', '주스', '차', '요거트']
+        const ALL_DESSERT_GROUPS = ['당류', '단백질', '탄수화물', '프레시', '컵라면', '요거트']
+
+        const isYogurtAllowed = (dayOfWeek: number): boolean => dayOfWeek === 1 || dayOfWeek === 2
+
+        const getAvailableDrinkGroups = (dayOfWeek: number): string[] => {
+          if (isYogurtAllowed(dayOfWeek)) return ALL_DRINK_GROUPS
+          return ALL_DRINK_GROUPS.filter(g => g !== '요거트')
+        }
+
+        const getAvailableDessertGroups = (dayOfWeek: number): string[] => {
+          if (isYogurtAllowed(dayOfWeek)) return ALL_DESSERT_GROUPS
+          return ALL_DESSERT_GROUPS.filter(g => g !== '요거트')
+        }
+
+        const poolByGroups = (pool: Product[], groups: string[], dayOfWeek: number): Product[] => {
+          const allowedGroups = groups.filter(g => g !== '요거트' || isYogurtAllowed(dayOfWeek))
+          const filtered = pool.filter(p => allowedGroups.includes(p.group ?? ''))
+          if (filtered.length > 0) return filtered
+          return pool.filter(p => p.group !== '요거트' || isYogurtAllowed(dayOfWeek))
+        }
+
+        const makeFreqTracker = () => {
+          const usage = new Map<string, number[]>()
+          return {
+            canUse: (id: string, dayIndex: number) => {
+              const used = usage.get(id) ?? []
+              const window = used.filter(d => dayIndex - d < 7)
+              return window.length < 2
+            },
+            markUsed: (id: string, dayIndex: number) => {
+              const used = usage.get(id) ?? []
+              usage.set(id, [...used, dayIndex])
+            }
+          }
+        }
+
+        const selectProduct = (
+          pool: Product[],
+          targetCost: number,
+          freq: ReturnType<typeof makeFreqTracker>,
+          dayIndex: number,
+          usedTodayIds: Set<string>
+        ): Product | undefined => {
+          if (pool.length === 0) return undefined
+          let candidates = pool.filter(p => !usedTodayIds.has(p.id) && freq.canUse(p.id, dayIndex))
+          if (candidates.length === 0) candidates = pool.filter(p => freq.canUse(p.id, dayIndex))
+          if (candidates.length === 0) candidates = pool
+          candidates.sort((a, b) => Math.abs(a.cost - targetCost) - Math.abs(b.cost - targetCost))
+          const top = candidates.slice(0, Math.min(3, candidates.length))
+          return top[Math.floor(Math.random() * top.length)]
+        }
+
+        const isMonday = (dayOfWeek: number) => dayOfWeek === 1
+
+        const pickDrinkGroup = (isBurger: boolean, prevGroup: string | null, dayOfWeek: number): string => {
+          if (isMonday(dayOfWeek)) return '요거트'
+          if (isBurger) return Math.random() < 0.75 ? '탄산' : '주스'
+          const available = getAvailableDrinkGroups(dayOfWeek).filter(g => g !== prevGroup)
+          const pool = available.length > 0 ? available : getAvailableDrinkGroups(dayOfWeek)
+          return pool[Math.floor(Math.random() * pool.length)]
+        }
+
+        const pickDessertGroup = (excludeGroups: string[], dayOfWeek: number): string => {
+          const effectiveExcludes = isMonday(dayOfWeek) && excludeGroups.includes('요거트')
+            ? [...excludeGroups]
+            : excludeGroups
+          const available = getAvailableDessertGroups(dayOfWeek).filter(g => !effectiveExcludes.includes(g))
+          const fallback = getAvailableDessertGroups(dayOfWeek).filter(g => !effectiveExcludes.includes('요거트') ? g !== '요거트' : true)
+          const pool = available.length > 0 ? available : (fallback.length > 0 ? fallback : getAvailableDessertGroups(dayOfWeek))
+          return pool[Math.floor(Math.random() * pool.length)]
+        }
+
+        const makeCombinationTracker = () => {
+          const used = new Set<string>()
+          return {
+            isUnique: (ids: string[]) => {
+              const key = [...ids].sort().join('|')
+              return !used.has(key)
+            },
+            mark: (ids: string[]) => {
+              const key = [...ids].sort().join('|')
+              used.add(key)
+            }
+          }
+        }
+
+        // 공통 식단 생성 함수: 김밥/샌드/버거
+        const buildStandardMeals = (
+          ffList: Product[],
+          tiers: { pricePoint: number; mealPlanName: string; dessertCount: number }[],
+          isBurger: boolean
+        ): { [mealPlanName: string]: DailyMeal[] } => {
+          const result: { [k: string]: DailyMeal[] } = {}
+          tiers.forEach(t => { result[t.mealPlanName] = [] })
+
+          const drinkFreq = makeFreqTracker()
+          const dessertFreqs = [makeFreqTracker(), makeFreqTracker()]
+          const combinationTracker = makeCombinationTracker()
+          let prevDrinkGroup: string | null = null
+
+          for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
+            const d = dates[dayIndex]
+            const dayOfWeek = d.getDay()
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            const ff = ffList[dayIndex % ffList.length]
+            const usedTodayIds = new Set<string>([ff.id])
+
+            const drinkGroup = pickDrinkGroup(isBurger, prevDrinkGroup, dayOfWeek)
+            prevDrinkGroup = drinkGroup
+            const drinkPool = poolByGroups(drinkProducts, [drinkGroup], dayOfWeek)
+            const targetDrink = getTarget(tiers[0].mealPlanName) - ff.cost
+            const drink = selectProduct(drinkPool, targetDrink, drinkFreq, dayIndex, usedTodayIds)
+            if (drink) { drinkFreq.markUsed(drink.id, dayIndex); usedTodayIds.add(drink.id) }
+
+            const maxDesserts = Math.max(...tiers.map(t => t.dessertCount))
+            const selectedDesserts: Product[] = []
+            const usedDessertGroups: string[] = [drinkGroup]
+
+            for (let di = 0; di < maxDesserts; di++) {
+              const tierWithThisDessert = tiers.find(t => t.dessertCount > di)
+              if (!tierWithThisDessert) break
+              const prevTierCost = di === 0
+                ? ff.cost + (drink?.cost ?? 0)
+                : ff.cost + (drink?.cost ?? 0) + selectedDesserts.reduce((s, x) => s + x.cost, 0)
+              const targetDessertCost = getTarget(tierWithThisDessert.mealPlanName) - prevTierCost
+
+              const dGroup = pickDessertGroup(usedDessertGroups, dayOfWeek)
+              usedDessertGroups.push(dGroup)
+              const dPool = poolByGroups(dessertProducts, [dGroup], dayOfWeek)
+              const dessert = selectProduct(dPool, targetDessertCost, dessertFreqs[di], dayIndex, usedTodayIds)
+              if (dessert) {
+                selectedDesserts.push(dessert)
+                dessertFreqs[di].markUsed(dessert.id, dayIndex)
+                usedTodayIds.add(dessert.id)
+              }
+            }
+
+            const comboIds = [drink?.id ?? '', ...selectedDesserts.map(d => d.id)].filter(Boolean)
+            if (!combinationTracker.isUnique(comboIds)) {
+              if (selectedDesserts.length > 0) {
+                const lastIdx = selectedDesserts.length - 1
+                const altPool = dessertProducts.filter(p => !usedTodayIds.has(p.id) && !selectedDesserts.slice(0, lastIdx).map(x => x.id).includes(p.id))
+                if (altPool.length > 0) {
+                  altPool.sort((a, b) => Math.abs(a.cost - (selectedDesserts[lastIdx]?.cost ?? 0)) - Math.abs(b.cost - (selectedDesserts[lastIdx]?.cost ?? 0)))
+                  selectedDesserts[lastIdx] = altPool[0]
+                }
+              }
+            }
+            combinationTracker.mark([drink?.id ?? '', ...selectedDesserts.map(x => x.id)].filter(Boolean))
+
+            for (const tier of tiers) {
+              const tierDesserts = selectedDesserts.slice(0, tier.dessertCount)
+              const totalCost = ff.cost + (drink?.cost ?? 0) + tierDesserts.reduce((s, x) => s + x.cost, 0)
+              result[tier.mealPlanName].push({
+                date: dateStr,
+                compositions: { [tier.pricePoint]: { ff, drink, desserts: tierDesserts, totalCost } }
+              })
+            }
+          }
+          return result
+        }
+
+        // ========== 김밥 식단 생성 ==========
+        const gimbapProducts = products.filter(p => p.category === 'ff' && p.ffType === '김밥')
+        if (gimbapProducts.length > 0) {
+          const meals = buildStandardMeals(
+            gimbapProducts,
+            [
+              { pricePoint: 3500, mealPlanName: '김밥3.5', dessertCount: 0 },
+              { pricePoint: 4500, mealPlanName: '김밥4.5', dessertCount: 1 },
+              { pricePoint: 5500, mealPlanName: '김밥5.5', dessertCount: 2 },
+            ],
+            false
+          )
+          Object.assign(mealPlanMeals, meals)
+        }
+
+        // ========== 샌드 식단 생성 (김밥과 동일한 음료/디저트) ==========
+        const sandProducts = products.filter(p => p.category === 'ff' && p.ffType === '샌드')
+        if (sandProducts.length > 0 && mealPlanMeals['김밥3.5']) {
+          const priceTiers: [string, number][] = [['3.5', 3500], ['4.5', 4500], ['5.5', 5500]]
+          for (const [suffix, price] of priceTiers) {
+            const base = mealPlanMeals[`김밥${suffix}`]
+            if (!base) continue
+            mealPlanMeals[`샌드${suffix}`] = base.map((meal, idx) => {
+              const sandFF = sandProducts[idx % sandProducts.length]
+              const comp = meal.compositions[price]
+              const desserts = comp?.desserts ?? []
+              return {
+                date: meal.date,
+                compositions: {
+                  [price]: {
+                    ff: sandFF,
+                    drink: comp?.drink,
+                    desserts,
+                    totalCost: sandFF.cost + (comp?.drink?.cost ?? 0) + desserts.reduce((s, d) => s + d.cost, 0)
+                  }
+                }
+              }
+            })
+          }
+        }
+
+        // ========== 삼각 식단 생성 (김밥과 동기화) ==========
+        // 삼각3.5 = 김밥4.5의 음료/디저트 그대로, FF만 주먹밥으로 교체
+        // 삼각4.5 = 김밥5.5의 음료/디저트 그대로, FF만 주먹밥으로 교체
+        const samgakProducts = products.filter(p => p.category === 'ff' && p.ffType === '주먹밥')
+        if (samgakProducts.length > 0 && mealPlanMeals['김밥4.5'] && mealPlanMeals['김밥5.5']) {
+          mealPlanMeals['삼각3.5'] = mealPlanMeals['김밥4.5'].map((meal, idx) => {
+            const samgakFF = samgakProducts[idx % samgakProducts.length]
+            const comp = meal.compositions[4500]
+            const desserts = comp?.desserts ?? []
+            const isFriday = new Date(meal.date).getDay() === 5
+            const totalCost = samgakFF.cost + (comp?.drink?.cost ?? 0) + desserts.reduce((s, d) => s + d.cost, 0)
+            return {
+              date: meal.date,
+              compositions: {
+                3500: {
+                  ff: samgakFF,
+                  drink: isFriday ? undefined : comp?.drink,
+                  desserts,
+                  totalCost,
+                }
+              }
+            }
+          })
+
+          mealPlanMeals['삼각4.5'] = mealPlanMeals['김밥5.5'].map((meal, idx) => {
+            const samgakFF = samgakProducts[idx % samgakProducts.length]
+            const comp = meal.compositions[5500]
+            const desserts = comp?.desserts ?? []
+            const isFriday = new Date(meal.date).getDay() === 5
+            const totalCost = samgakFF.cost + (comp?.drink?.cost ?? 0) + desserts.reduce((s, d) => s + d.cost, 0)
+            return {
+              date: meal.date,
+              compositions: {
+                4500: {
+                  ff: samgakFF,
+                  drink: isFriday ? undefined : comp?.drink,
+                  desserts,
+                  totalCost,
+                }
+              }
+            }
+          })
+        }
+
+        // ========== 버거 식단 생성 ==========
+        const burgerProducts = products.filter(p => p.category === 'ff' && p.ffType === '버거')
+        if (burgerProducts.length > 0) {
+          const meals = buildStandardMeals(
+            burgerProducts,
+            [
+              { pricePoint: 3500, mealPlanName: '버거3.5', dessertCount: 0 },
+              { pricePoint: 4500, mealPlanName: '버거4.5', dessertCount: 1 },
+              { pricePoint: 5500, mealPlanName: '버거5.5', dessertCount: 2 },
+            ],
+            true
+          )
+          Object.assign(mealPlanMeals, meals)
+        }
+
+        // ========== 도시락 5개 고정 조합 생성 ==========
+        const dosirakProducts = products.filter(p => p.category === 'ff' && p.ffType === '도시락')
+        const dosirakSets: DosirakSets = { 4500: [], 5500: [], 6500: [] }
+
+        if (dosirakProducts.length > 0) {
+          const target45 = getTarget('도시락4.5')
+          const target55 = getTarget('도시락5.5')
+          const target65 = getTarget('도시락6.5')
+
+          const selectedFFs: Product[] = []
+          const shuffledFFs = [...dosirakProducts].sort(() => Math.random() - 0.5)
+          for (let i = 0; i < 5; i++) {
+            selectedFFs.push(shuffledFFs[i % shuffledFFs.length])
+          }
+
+          const drinkGroupCycle = ['건강', '주스', '탄산', '차', '건강']
+          const dessertGroupCycle = ['단백질', '프레시', '탄수화물', '당류', '단백질']
+
+          for (let setNum = 1; setNum <= 5; setNum++) {
+            const ff = selectedFFs[setNum - 1]
+            const usedIds = new Set<string>([ff.id])
+
+            const drinkGroup = drinkGroupCycle[setNum - 1]
+            const drinkPool = drinkProducts.filter(p => p.group === drinkGroup)
+            const fallbackDrinkPool = drinkPool.length > 0 ? drinkPool : drinkProducts
+            const drink = fallbackDrinkPool.reduce((best, p) => {
+              if (usedIds.has(p.id)) return best
+              const diff = Math.abs(p.cost - (target45 - ff.cost))
+              if (!best || diff < Math.abs(best.cost - (target45 - ff.cost))) return p
+              return best
+            }, undefined as Product | undefined)
+            if (drink) usedIds.add(drink.id)
+
+            const totalCost45 = ff.cost + (drink?.cost ?? 0)
+            dosirakSets[4500].push({ setNumber: setNum, ff, drink, desserts: [], totalCost: totalCost45 })
+
+            const dessertGroup55 = dessertGroupCycle[setNum - 1]
+            const dessertPool55 = dessertProducts.filter(p => p.group === dessertGroup55 && !usedIds.has(p.id))
+            const fallbackDessertPool55 = dessertPool55.length > 0 ? dessertPool55 : dessertProducts.filter(p => !usedIds.has(p.id))
+            const dessert55 = fallbackDessertPool55.reduce((best, p) => {
+              const diff = Math.abs(p.cost - (target55 - totalCost45))
+              if (!best || diff < Math.abs(best.cost - (target55 - totalCost45))) return p
+              return best
+            }, undefined as Product | undefined)
+            if (dessert55) usedIds.add(dessert55.id)
+
+            const desserts55 = dessert55 ? [dessert55] : []
+            const totalCost55 = totalCost45 + desserts55.reduce((s, d) => s + d.cost, 0)
+            dosirakSets[5500].push({ setNumber: setNum, ff, drink, desserts: desserts55, totalCost: totalCost55 })
+
+            const nextGroup = dessertGroupCycle[(setNum) % 5]
+            const dessertPool65 = dessertProducts.filter(p => p.group === nextGroup && !usedIds.has(p.id))
+            const fallbackDessertPool65 = dessertPool65.length > 0 ? dessertPool65 : dessertProducts.filter(p => !usedIds.has(p.id))
+            const dessert65 = fallbackDessertPool65.reduce((best, p) => {
+              const diff = Math.abs(p.cost - (target65 - totalCost45))
+              if (!best || diff < Math.abs(best.cost - (target65 - totalCost45))) return p
+              return best
+            }, undefined as Product | undefined)
+
+            const desserts65 = dessert65 ? [dessert65] : desserts55
+            const totalCost65 = totalCost45 + desserts65.reduce((s, d) => s + d.cost, 0)
+            dosirakSets[6500].push({ setNumber: setNum, ff, drink, desserts: desserts65, totalCost: totalCost65 })
+          }
+        }
+
+        delete mealPlanMeals['도시락4.5']
+        delete mealPlanMeals['도시락5.5']
+        delete mealPlanMeals['도시락6.5']
+        set({ dosirakSets })
+
+        // ========== 음X 식단 생성 ==========
+        // 김밥3.5(음X): 김밥4.5의 FF + B + C (음료 제외)
+        // 샌드3.5(음X): 샌드4.5의 FF + B + C
+        // 삼각3.5(음X): 삼각4.5의 FF + B + C
+        const noDrinkMappings: { target: string; source: string; ffType: FFType }[] = [
+          { target: '김밥3.5(음X)', source: '김밥4.5', ffType: '김밥' },
+          { target: '샌드3.5(음X)', source: '샌드4.5', ffType: '샌드' },
+          { target: '삼각3.5(음X)', source: '삼각4.5', ffType: '주먹밥' },
+        ]
+
+        for (const mapping of noDrinkMappings) {
+          const source45 = mealPlanMeals[mapping.source]
+          const source55Name = mapping.source.replace('4.5', '5.5')
+          const source55 = mealPlanMeals[source55Name]
+          if (!source45) continue
+
+          const ffPool = products.filter(p => p.category === 'ff' && p.ffType === mapping.ffType)
+
+          mealPlanMeals[mapping.target] = source45.map((meal, idx) => {
+            const comp45 = meal.compositions[4500]
+            const comp55 = source55?.[idx]?.compositions[5500]
+            const dessertC = comp55?.desserts?.[1]
+            const ff = comp45?.ff ?? ffPool[idx % ffPool.length]
+            const desserts: Product[] = []
+            if (comp45?.desserts?.[0]) desserts.push(comp45.desserts[0])
+            if (dessertC) desserts.push(dessertC)
+            const totalCost = ff.cost + desserts.reduce((s, d) => s + d.cost, 0)
+            return {
+              date: meal.date,
+              compositions: {
+                3500: { ff, drink: undefined, desserts, totalCost }
+              }
+            }
+          })
+        }
+
+        // ========== 공장박스 식단 생성 ==========
+        const gimbap35 = mealPlanMeals['김밥3.5']
+        const samgakFFPool = products.filter(p => p.category === 'ff' && p.ffType === '주먹밥' && p.name.startsWith('삼각)'))
+        const sandFFPool = products.filter(p => p.category === 'ff' && p.ffType === '샌드')
+
+        if ((samgakFFPool.length > 0 || sandFFPool.length > 0) && gimbap35) {
+          const factoryBoxMeals: DailyMeal[] = []
+          let samgakIdx = 0
+          let sandIdx = 0
+
+          for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
+            const d = dates[dayIndex]
+            const dayOfWeek = d.getDay()
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            const isMon = dayOfWeek === 1
+
+            if (isMon) {
+              const sandFF = sandFFPool.length > 0 ? sandFFPool[sandIdx % sandFFPool.length] : undefined
+              sandIdx++
+              factoryBoxMeals.push({
+                date: dateStr,
+                compositions: {
+                  3500: { ff: sandFF, drink: undefined, desserts: [], totalCost: sandFF?.cost ?? 0 }
+                }
+              })
+            } else {
+              const samgakFF = samgakFFPool.length > 0 ? samgakFFPool[samgakIdx % samgakFFPool.length] : undefined
+              samgakIdx++
+              const gimbap35Meal = gimbap35.find(m => m.date === dateStr)
+              const drinkFromGimbap = gimbap35Meal?.compositions[3500]?.drink
+              factoryBoxMeals.push({
+                date: dateStr,
+                compositions: {
+                  3500: {
+                    ff: samgakFF,
+                    drink: drinkFromGimbap,
+                    desserts: [],
+                    totalCost: (samgakFF?.cost ?? 0) + (drinkFromGimbap?.cost ?? 0),
+                  }
+                }
+              })
+            }
+          }
+          mealPlanMeals['공장박스'] = factoryBoxMeals
+        }
+
+        set({ mealPlanMeals })
+      },
+
+      // (updateMealComposition, updateMealComponent, updateFF, updateDosirakSet,
+      //  setFreeSlot, moveFreeDay, clearFreeDay, saveSnapshot, loadSnapshot, deleteSnapshot,
+      //  clearSnapshotStatus 는 실제 파일에서 위 generateMeals 이후에 위치합니다.
+      //  전체 내용은 lib/store.ts 파일에서 확인하세요.)
+    }),
+    { name: 'mealbox-storage' }
+  )
+)
+
+
+────────────────────────────────────────────────────────────────────────────────
+[9] lib/excel-export.ts
+────────────────────────────────────────────────────────────────────────────────
+// 이 파일은 고객용/공장용 엑셀 식단표 다운로드 로직을 담고 있습니다.
+// 주요 함수:
+//   downloadCustomerExcel(...) - 고객용 식단표 (원가 비공개, 7열 그리드)
+//   downloadFactoryExcel(...)  - 공장용 식단표 (원가 포함, D-1 생산일 기준)
+// 탭 구성:
+//   가)김밥 / 가-1)김밥(음X) / 나)삼각 / 나-1)삼각(음X) / 다)샌드 / 다-1)샌드(음X)
+//   라)버거 / 마)도시락 / 바)공장박스 / 사)프리포맷
+// (전체 코드는 lib/excel-export.ts 파일을 참조하세요 - 약 400줄)
+
+
+────────────────────────────────────────────────────────────────────────────────
+[10] components/meal-plan-selector.tsx
+────────────────────────────────────────────────────────────────────────────────
+'use client'
+
+import { useMealboxStore } from '@/lib/store'
+import { ALL_MEAL_PLANS, MealPlanName } from '@/lib/types'
+import { cn } from '@/lib/utils'
+
+export function MealPlanSelector() {
+  const { selectedMealPlan, setSelectedMealPlan } = useMealboxStore()
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium text-foreground">식단 선택</h3>
+        <span className="text-xs text-muted-foreground">
+          {selectedMealPlan ? `현재: ${selectedMealPlan}` : '식단을 선택하세요'}
+        </span>
+      </div>
+      
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-11 gap-2">
+        {ALL_MEAL_PLANS.map((plan) => {
+          const isFreeFormat = plan.name === '프리포맷'
+          const colorClass = isFreeFormat
+            ? 'hover:border-violet-500/50 data-[selected=true]:bg-violet-600 data-[selected=true]:border-violet-600'
+            : plan.ffType === '김밥' 
+            ? 'hover:border-green-500/50 data-[selected=true]:bg-green-600 data-[selected=true]:border-green-600'
+            : plan.ffType === '주먹밥'
+            ? 'hover:border-amber-500/50 data-[selected=true]:bg-amber-600 data-[selected=true]:border-amber-600'
+            : plan.ffType === '샌드'
+            ? 'hover:border-blue-500/50 data-[selected=true]:bg-blue-600 data-[selected=true]:border-blue-600'
+            : 'hover:border-red-500/50 data-[selected=true]:bg-red-600 data-[selected=true]:border-red-600'
+          
+          return (
+            <button
+              key={plan.name}
+              data-selected={selectedMealPlan === plan.name}
+              onClick={() => setSelectedMealPlan(
+                selectedMealPlan === plan.name ? null : plan.name
+              )}
+              className={cn(
+                "px-3 py-2 text-sm font-medium rounded-md transition-all",
+                "border border-border",
+                "bg-secondary/30 text-foreground hover:bg-secondary/50",
+                "data-[selected=true]:text-white",
+                colorClass
+              )}
+            >
+              {plan.name}
+            </button>
+          )
+        })}
+      </div>
+      
+      {selectedMealPlan && (
+        <div className="mt-3 pt-3 border-t border-border">
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span>FF 타입: <span className="text-primary font-medium">
+              {ALL_MEAL_PLANS.find(p => p.name === selectedMealPlan)?.ffType}
+            </span></span>
+            <span>판매가: <span className="text-primary font-medium">
+              {ALL_MEAL_PLANS.find(p => p.name === selectedMealPlan)?.price.toLocaleString()}원
+            </span></span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+[11] components/cost-settings.tsx
+────────────────────────────────────────────────────────────────────────────────
+'use client'
+
+import { Input } from '@/components/ui/input'
+import { useMealboxStore } from '@/lib/store'
+import { MEAL_PLAN_COST_CONFIGS } from '@/lib/types'
+
+export function CostSettings() {
+  const { mealPlanTargetCosts, setMealPlanTargetCost } = useMealboxStore()
+  
+  const gimbapConfigs = MEAL_PLAN_COST_CONFIGS.filter(c => c.ffType === '김밥')
+  const samgakConfigs = MEAL_PLAN_COST_CONFIGS.filter(c => c.ffType === '주먹밥')
+  const burgerConfigs = MEAL_PLAN_COST_CONFIGS.filter(c => c.ffType === '버거')
+  const dosirakConfigs = MEAL_PLAN_COST_CONFIGS.filter(c => c.ffType === '도시락')
+  const factoryBoxConfigs = MEAL_PLAN_COST_CONFIGS.filter(c => c.mealPlanName === '공장박스')
+
+  const renderCostGroup = (title: string, configs: typeof MEAL_PLAN_COST_CONFIGS, note?: string) => (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <h4 className="text-sm font-medium text-foreground">{title}</h4>
+        {note && <span className="text-xs text-muted-foreground">({note})</span>}
+      </div>
+      <div className="grid gap-2">
+        {configs.map(config => (
+          <div key={config.mealPlanName} className="flex items-center justify-between p-3 bg-secondary/30 rounded-md">
+            <div className="flex flex-col">
+              <span className="text-sm font-medium text-foreground">{config.name}</span>
+              <span className="text-xs text-muted-foreground">{config.description}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">목표 원가</span>
+              <Input
+                type="number"
+                value={mealPlanTargetCosts[config.mealPlanName] || config.defaultCost}
+                onChange={(e) => setMealPlanTargetCost(config.mealPlanName, parseInt(e.target.value) || 0)}
+                className="h-8 w-24 text-right bg-background"
+              />
+              <span className="text-xs text-muted-foreground">원</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <h3 className="font-semibold text-foreground mb-4">식단별 목표 원가 설정</h3>
+      <div className="grid gap-6">
+        {renderCostGroup('김밥 식단', gimbapConfigs, '샌드 식단은 김밥과 동일 구성')}
+        {renderCostGroup('삼각 식단', samgakConfigs)}
+        {renderCostGroup('버거 식단', burgerConfigs)}
+        {renderCostGroup('도시락 식단', dosirakConfigs)}
+        {renderCostGroup('공장박스', factoryBoxConfigs, '고정 원가 기준 · 월:샌드단품 / 화~일:삼각김밥+음료')}
+      </div>
+      <p className="text-xs text-muted-foreground mt-4">
+        각 식단의 평균 원가가 목표 원가의 99%~101% 범위 내에서 자동 구성됩니다.
+      </p>
+    </div>
+  )
+}
+
+
+────────────────────────────────────────────────────────────────────────────────
+[12] components/header.tsx (DatePicker + Header)
+────────────────────────────────────────────────────────────────────────────────
+// DatePicker: Popover 기반 달력 컴포넌트 (날짜 선택)
+// Header: 앱 헤더 (식단 자동 생성 버튼, CSV 내보내기)
+// (전체 코드는 components/header.tsx 파일을 참조하세요 - 약 150줄)
+
+
+────────────────────────────────────────────────────────────────────────────────
+[13] components/date-range-selector.tsx
+────────────────────────────────────────────────────────────────────────────────
+// DatePickerDropdown: 드롭다운 달력 (시작일/종료일 선택, minDate/maxDate 제약)
+// DateRangeSelector: 시작일~종료일 선택 UI + 총 일수 표시
+// (전체 코드는 components/date-range-selector.tsx 파일을 참조하세요 - 약 170줄)
+
+
+────────────────────────────────────────────────────────────────────────────────
+[14] components/excel-uploader.tsx
+────────────────────────────────────────────────────────────────────────────────
+// ExcelUploader: 탭 구분 텍스트 붙여넣기 방식으로 FF/음료/디저트 상품 일괄 등록
+// (전체 코드는 components/excel-uploader.tsx 파일을 참조하세요 - 약 200줄)
+
+
+────────────────────────────────────────────────────────────────────────────────
+[15] components/product-manager.tsx
+────────────────────────────────────────────────────────────────────────────────
+// ProductManager: FF/음료/디저트 상품 CRUD 관리 컴포넌트
+//   - 이미지 드래그앤드롭 → AI(GPT-4o-mini) 파싱으로 상품 자동 추출
+//   - 상품 추가/수정/삭제
+// (전체 코드는 components/product-manager.tsx 파일을 참조하세요 - 약 270줄)
+
+
+────────────────────────────────────────────────────────────────────────────────
+[16] components/meal-calendar.tsx
+────────────────────────────────────────────────────────────────────────────────
+// MealCalendar: 식단 캘린더 메인 컴포넌트
+//
+// 주요 기능:
+//   - 월별 캘린더 그리드 (고객 수령일 / 공장 생산일 D-1 뷰 전환)
+//   - 도시락: 5개 고정 조합 카드 UI
+//   - 프리포맷: 날짜별 최대 5개 슬롯 자유 편집 (상품 선택 or 텍스트 직접 입력)
+//     - 드래그앤드롭으로 날짜간 복사(기본)/이동(Shift)
+//   - 구성품 클릭 → 교체 다이얼로그 (연동 옵션, 실시간 원가 시뮬레이션)
+//   - 삼각 ↔ 김밥 역방향 연동 (삼각3.5=김밥4.5, 삼각4.5=김밥5.5)
+//   - 금요일 삼각박스: 컵라면 필수 슬롯 (강제변경 override 옵션)
+//   - 주차별/월 전체 원가 통계 사이드바
+//   - 스냅샷 저장/불러오기 다이얼로그
+//   - 고객용/공장용 엑셀 식단표 다운로드
+//
+// (전체 코드는 components/meal-calendar.tsx 파일을 참조하세요 - 약 1800줄)
+// MealDetail: 날짜별 식단 구성품 상세 표시 서브 컴포넌트
+
+
+================================================================================
+구조 요약
+================================================================================
+
+프로젝트 루트
+├── app/
+│   ├── globals.css          (Tailwind v4 + 디자인 토큰)
+│   ├── layout.tsx           (메타데이터, 폰트)
+│   ├── page.tsx             (3개 탭: 상품관리 / 원가설정 / 식단캘린더)
+│   └── api/parse-image/route.ts  (AI 이미지 파싱 엔드포인트)
+├── components/
+│   ├── header.tsx           (앱 헤더 + 식단 자동 생성 버튼)
+│   ├── date-range-selector.tsx   (날짜 범위 선택)
+│   ├── excel-uploader.tsx   (텍스트 붙여넣기 상품 등록)
+│   ├── product-manager.tsx  (상품 CRUD + 이미지 AI 파싱)
+│   ├── cost-settings.tsx    (식단별 목표 원가 설정)
+│   ├── meal-plan-selector.tsx    (식단 탭 버튼 목록)
+│   ├── meal-calendar.tsx    (캘린더 메인 + 모든 편집 다이얼로그)
+│   └── ui/                  (shadcn/ui 컴포넌트들)
+└── lib/
+    ├── types.ts             (타입 정의 + ALL_MEAL_PLANS + MEAL_PLAN_COST_CONFIGS)
+    ├── store.ts             (Zustand 전역 상태 + 식단 생성 알고리즘)
+    ├── excel-export.ts      (고객용/공장용 엑셀 다운로드)
+    └── utils.ts             (cn 유틸)
+
+================================================================================
+핵심 비즈니스 로직 (store.ts generateMeals)
+================================================================================
+
+1. 김밥 식단 생성 (buildStandardMeals)
+   - 날짜별 FF → 음료 → 디저트B → 디저트C 순서로 선택
+   - 음료 선택 규칙: 월요일=요거트 필수, 버거=탄산75%/주스25%, 나머지=전날과 다른 그룹
+   - 디저트 선택: 음료 그룹과 중복 안되는 그룹에서 랜덤
+   - SKU 빈도 제한: 7일 window 내 최대 2회
+   - 조합 고유성: 7일 내 동일 A+B+C 조합 금지
+   - 요거트: 월·화요일만 허용 (소비기한)
+
+2. 샌드 식단 = 김밥 음료/디저트 그대로 + 샌드 FF만 교체
+
+3. 삼각 식단 = 김밥과 동기화
+   - 삼각3.5 = 김밥4.5의 음료+디저트(B) → FF만 주먹밥으로 교체, price=3500
+   - 삼각4.5 = 김밥5.5의 음료+디저트(B+C) → FF만 주먹밥으로 교체, price=4500
+
+4. 버거 식단 = buildStandardMeals (isBurger=true)
+
+5. 도시락 = 5개 고정 조합 (날짜 무관)
+
+6. 음X 식단 = 음료 제외, 4.5(B)+5.5(C) 디저트 조합
+
+7. 공장박스 = 월:샌드 단품 / 화~일:삼각) FF + 김밥3.5 음료
+
+================================================================================
+식단 선택 버튼 목록 (ALL_MEAL_PLANS)
+================================================================================
+김밥3.5 / 김밥4.5 / 김밥5.5 / 김밥3.5(음X)
+삼각3.5 / 삼각4.5 / 삼각3.5(음X)
+샌드3.5 / 샌드4.5 / 샌드5.5 / 샌드3.5(음X)
+버거3.5 / 버거4.5 / 버거5.5
+도시락4.5 / 도시락5.5 / 도시락6.5
+공장박스
+프리포맷  ← 자유 편집 식단 (슬롯 최대 5개, 상품 선택 or 텍스트 직접 입력)
+
+================================================================================
