@@ -622,50 +622,61 @@ export const useMealboxStore = create<MealboxStore>()(
 
         set({ dosirakSets })
 
-        // ========== 음X 식단 생성 (음료 제외, 4.5 기준 B+C 연동) ==========
-        // 김밥3.5(음X): 김밥4.5��� FF + B + C (음료 제외)
-        // 샌드3.5(음X): 샌드4.5의 FF + B + C (음료 제외)
-        // 삼각3.5(음X): 삼각4.5의 FF + B + C (음료 제외)
-        const noDrinkMappings: { target: string; source: string; ffType: FFType }[] = [
-          { target: '김밥3.5(음X)', source: '김밥4.5', ffType: '김밥' },
-          { target: '샌드3.5(음X)', source: '샌드4.5', ffType: '샌드' },
-          { target: '삼각3.5(음X)', source: '삼각4.5', ffType: '주먹밥' },
-        ]
+        // ========== 음X 식단 생성 ==========
+        // [규칙]
+        // 김밥3.5(음X): 김밥4.5 기준 → FF + 디저트B 1개 (음료 제외)
+        // 샌드3.5(음X): 김밥4.5 기준 → 샌드FF + 디저트B 1개 (음료 제외)
+        // 삼각3.5(음X): 김밥5.5 기준 → 주먹밥FF + 디저트1 + 디저트2 2개 (음료 제외)
 
-        for (const mapping of noDrinkMappings) {
-          const source45 = mealPlanMeals[mapping.source]
-          const source55Name = mapping.source.replace('4.5', '5.5')
-          const source55 = mealPlanMeals[source55Name]
-          if (!source45) continue
+        const gimbap45 = mealPlanMeals['김밥4.5']
+        const gimbap55 = mealPlanMeals['김밥5.5']
 
-          // 해당 FF 타입 상품 목록
-          const ffPool = products.filter(p => p.category === 'ff' && p.ffType === mapping.ffType)
-
-          mealPlanMeals[mapping.target] = source45.map((meal, idx) => {
-            const comp45 = meal.compositions[4500]
-            // 5.5에서 C 디저트 가져오기
-            const comp55 = source55?.[idx]?.compositions[5500]
-            const dessertC = comp55?.desserts?.[1]
-
-            // FF: 4.5와 동일 FF 사용 (삼각의 경우 삼각김밥 FF)
-            const ff = comp45?.ff ?? ffPool[idx % ffPool.length]
-
-            // 디저트: B(4.5의 첫 디저트) + C(5.5의 두번째 디저트)
-            const desserts: Product[] = []
-            if (comp45?.desserts?.[0]) desserts.push(comp45.desserts[0])
-            if (dessertC) desserts.push(dessertC)
-
+        // 김밥3.5(음X): 김밥4.5 기반, 동일 FF, 디저트B 1개만
+        if (gimbap45) {
+          mealPlanMeals['김밥3.5(음X)'] = gimbap45.map((meal) => {
+            const comp = meal.compositions[4500]
+            const ff = comp?.ff
+            if (!ff) return { date: meal.date, compositions: { 3500: null } }
+            const desserts: Product[] = comp?.desserts?.[0] ? [comp.desserts[0]] : []
             const totalCost = ff.cost + desserts.reduce((s, d) => s + d.cost, 0)
-
             return {
               date: meal.date,
-              compositions: {
-                3500: {
-                  ff,
-                  drink: undefined, // 음료 제외
-                  desserts,
-                  totalCost,
-                }
+              compositions: { 3500: { ff, drink: undefined, desserts, totalCost } }
+            }
+          })
+        }
+
+        // 샌드3.5(음X): 김밥4.5 기반, 샌드FF로 교체, 디저트B 1개만
+        const sandFFPool = products.filter(p => p.category === 'ff' && p.ffType === '샌드')
+        if (gimbap45 && sandFFPool.length > 0) {
+          mealPlanMeals['샌드3.5(음X)'] = gimbap45.map((meal, idx) => {
+            const comp = meal.compositions[4500]
+            const ff = sandFFPool[idx % sandFFPool.length]
+            const desserts: Product[] = comp?.desserts?.[0] ? [comp.desserts[0]] : []
+            const totalCost = ff.cost + desserts.reduce((s, d) => s + d.cost, 0)
+            return {
+              date: meal.date,
+              compositions: { 3500: { ff, drink: undefined, desserts, totalCost } }
+            }
+          })
+        }
+
+        // 삼각3.5(음X): 김밥5.5 기반, 주먹밥FF로 교체, 디저트1+디저트2 2개
+        const samgakNoDrinkFFPool = products.filter(p => p.category === 'ff' && p.ffType === '주먹밥')
+        if (gimbap55 && samgakNoDrinkFFPool.length > 0) {
+          mealPlanMeals['삼각3.5(음X)'] = gimbap55.map((meal, idx) => {
+            const comp = meal.compositions[5500]
+            const ff = samgakNoDrinkFFPool[idx % samgakNoDrinkFFPool.length]
+            const desserts: Product[] = []
+            if (comp?.desserts?.[0]) desserts.push(comp.desserts[0])
+            if (comp?.desserts?.[1]) desserts.push(comp.desserts[1])
+            const totalCost = ff.cost + desserts.reduce((s, d) => s + d.cost, 0)
+            return {
+              date: meal.date,
+              compositions: { 3500: { ff, drink: undefined, desserts, totalCost } }
+            }
+          })
+        }
               }
             }
           })
@@ -1100,7 +1111,7 @@ export const useMealboxStore = create<MealboxStore>()(
         }, 500)
       },
 
-      // 스냅샷 삭제
+      // 스냅�� 삭제
       deleteSnapshot: (id) => set((state) => ({
         snapshots: state.snapshots.filter(s => s.id !== id),
       })),
