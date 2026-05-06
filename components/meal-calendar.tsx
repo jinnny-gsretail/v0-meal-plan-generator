@@ -292,55 +292,13 @@ export function MealCalendar() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month, currentMealPlanData, currentMealPlanInfo, targetCosts, startDate, endDate, viewMode])
 
-  // 선택된 식단이 없으면 안내 메시지 표시
-  if (!selectedMealPlan) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center">
-        <p className="text-muted-foreground">
-          위에서 확인하고 싶은 식단을 선택해주세요.
-        </p>
-      </div>
-    )
-  }
-
-  // 도시락: dosirakSets 데이터 확인
+  // 도시락: dosirakSets 데이터 확인 (early return 전에 선언해야 Hook 순서 유지)
   const currentDosirakPrice = isDosirak && currentMealPlanInfo ? currentMealPlanInfo.price : 0
   const currentDosirakSets = isDosirak ? dosirakSets[currentDosirakPrice] || [] : []
 
-  // 식단 데이터가 없으면 생성 안내 (도시락·프리포맷은 별도 체크)
-  if (!isDosirak && !isFreeFormat && currentMealPlanData.length === 0) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center">
-        <p className="text-muted-foreground">
-          식단이 생성되지 않았습니다. 상품을 등록하고 &apos;식단 자동 생성&apos; 버튼을 클릭해주세요.
-        </p>
-      </div>
-    )
-  }
-  
-  if (isDosirak && currentDosirakSets.length === 0) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center">
-        <p className="text-muted-foreground">
-          도시락 조합이 생성되지 않았습니다. 상품을 등록하고 &apos;식단 자동 생성&apos; 버튼을 클릭해주세요.
-        </p>
-      </div>
-    )
-  }
-
-  const handleDownloadCustomer = () => {
-    if (!startDate || !endDate) return
-    downloadCustomerExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
-  }
-
-  const handleDownloadFactory = () => {
-    if (!startDate || !endDate) return
-    downloadFactoryExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
-  }
-
   const hasData = startDate && endDate && Object.keys(mealPlanMeals).length > 0
 
-  // 교체 가능한 상품 목록 (제약 조건 필터링)
+  // 교체 가능한 상품 목록 (제약 조건 필터링) — early return 전에 선언 필수 (Hooks 규칙)
   const getAvailableProducts = useMemo(() => {
     if (!editingComponent) return []
 
@@ -477,6 +435,48 @@ export function MealCalendar() {
     const diff = avgCost - targetCost
     return { avgCost, targetCost, diff, costs }
   }, [isDosirak, currentDosirakSets, mealPlanTargetCosts, selectedMealPlan, targetCosts, currentDosirakPrice])
+
+  // ── Early returns (모든 Hook 선언 이후에 위치) ──────────────────────────────
+  if (!selectedMealPlan) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-8 text-center">
+        <p className="text-muted-foreground">
+          위에서 확인하고 싶은 식단을 선택해주세요.
+        </p>
+      </div>
+    )
+  }
+
+  if (!isDosirak && !isFreeFormat && currentMealPlanData.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-8 text-center">
+        <p className="text-muted-foreground">
+          식단이 생성되지 않았습니다. 상품을 등록하고 &apos;식단 자동 생성&apos; 버튼을 클릭해주세요.
+        </p>
+      </div>
+    )
+  }
+
+  if (isDosirak && currentDosirakSets.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-8 text-center">
+        <p className="text-muted-foreground">
+          도시락 조합이 생성되지 않았습니다. 상품을 등록하고 &apos;식단 자동 생성&apos; 버튼을 클릭해주세요.
+        </p>
+      </div>
+    )
+  }
+  // ────────────────────────────────────────────────────────────────────────────
+
+  const handleDownloadCustomer = () => {
+    if (!startDate || !endDate) return
+    downloadCustomerExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
+  }
+
+  const handleDownloadFactory = () => {
+    if (!startDate || !endDate) return
+    downloadFactoryExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
+  }
 
   return (
     <div className="space-y-4">
@@ -1598,7 +1598,7 @@ export function MealCalendar() {
         </Dialog>
       )}
 
-      {/* 식단 저장 다이얼로그 */}
+      {/* 식단 저장 다��얼로그 */}
       <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
         <DialogContent className="max-w-md bg-card">
           <DialogHeader>
