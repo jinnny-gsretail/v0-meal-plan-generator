@@ -683,10 +683,10 @@ export const useMealboxStore = create<MealboxStore>()(
         // 화~일요일: "삼각)" 접두어 삼각김밥 + 김밥3.5의 음료
         const gimbap35 = mealPlanMeals['김밥3.5']
         const samgakFFPool = products.filter(p => p.category === 'ff' && p.ffType === '주먹밥' && p.name.startsWith('삼각)'))
-        const sandFFPool = products.filter(p => p.category === 'ff' && p.ffType === '샌드')
+        const factoryBoxSandFFPool = products.filter(p => p.category === 'ff' && p.ffType === '샌드')
         const factoryBoxCost = 964 // 고정 원가
 
-        if ((samgakFFPool.length > 0 || sandFFPool.length > 0) && gimbap35) {
+        if ((samgakFFPool.length > 0 || factoryBoxSandFFPool.length > 0) && gimbap35) {
           const factoryBoxMeals: DailyMeal[] = []
           let samgakIdx = 0
           let sandIdx = 0
@@ -699,7 +699,7 @@ export const useMealboxStore = create<MealboxStore>()(
 
             if (isMonday) {
               // 월요일: 샌드 단품 (FF만)
-              const sandFF = sandFFPool.length > 0 ? sandFFPool[sandIdx % sandFFPool.length] : undefined
+              const sandFF = factoryBoxSandFFPool.length > 0 ? factoryBoxSandFFPool[sandIdx % factoryBoxSandFFPool.length] : undefined
               sandIdx++
               factoryBoxMeals.push({
                 date: dateStr,
