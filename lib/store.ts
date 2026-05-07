@@ -238,7 +238,8 @@ export const useMealboxStore = create<MealboxStore>()(
 
         // ── 음료/디저트 그룹 상수 ──
         const ALL_DRINK_GROUPS = ['탄산', '건강', '주스', '차', '요거트']
-        const ALL_DESSERT_GROUPS = ['당류', '단백질', '탄수화물', '프레시', '컵라면', '요거트']
+        // 컵라면은 삼각3.5 금요일 전용 → 일반 디저트 풀에서 제외
+        const ALL_DESSERT_GROUPS = ['당류', '단백질', '탄수화물', '프레시', '요거트']
 
         // 소비기한 기반 요거트 필터:
         // 월(1), 화(2)만 허용 / 수(3)~일(0) 제외
@@ -485,23 +486,37 @@ export const useMealboxStore = create<MealboxStore>()(
         // ========== 삼각 식단 생성 (김밥과 동기화) ==========
         // 삼각3.5 = 김밥4.5의 음료/디저트 그대로, FF만 주먹밥으로 교체
         // 삼각4.5 = 김밥5.5의 음료/디저트 그대로, FF만 주먹밥으로 교체
+        // ★ 삼각3.5 금요일(목요일생산): 음료 제외하고 컵라면 1개 추가
         const samgakProducts = products.filter(p => p.category === 'ff' && p.ffType === '주먹밥')
+        const cupRamenPool = products.filter(p => p.category === 'dessert' && p.group === '컵라면')
+        
         if (samgakProducts.length > 0 && mealPlanMeals['김밥4.5'] && mealPlanMeals['김밥5.5']) {
           // 삼각3.5 ← 김밥4.5 기반, FF만 주먹밥으로 교체
+          // 금요일(고객수령일=목요일생산): 음료 제외, 컵라면 추가
           mealPlanMeals['삼각3.5'] = mealPlanMeals['김밥4.5'].map((meal, idx) => {
             const samgakFF = samgakProducts[idx % samgakProducts.length]
             const comp = meal.compositions[4500]
-            const desserts = comp?.desserts ?? []
+            const baseDesserts = comp?.desserts ?? []
             const isFriday = new Date(meal.date).getDay() === 5
-            // 금요일: 음료 대신 컵라면을 desserts[0]에 포함 (김밥4.5에서 이미 처리됨)
-            const totalCost = samgakFF.cost + (comp?.drink?.cost ?? 0) + desserts.reduce((s, d) => s + d.cost, 0)
+            
+            let finalDesserts: Product[] = [...baseDesserts]
+            let finalDrink = comp?.drink
+            
+            if (isFriday && cupRamenPool.length > 0) {
+              // 금요일: 음료 제외, 컵라면 추가 (디저트 맨 앞에)
+              const cupRamen = cupRamenPool[idx % cupRamenPool.length]
+              finalDesserts = [cupRamen, ...baseDesserts]
+              finalDrink = undefined
+            }
+            
+            const totalCost = samgakFF.cost + (finalDrink?.cost ?? 0) + finalDesserts.reduce((s, d) => s + d.cost, 0)
             return {
               date: meal.date,
               compositions: {
                 3500: {
                   ff: samgakFF,
-                  drink: isFriday ? undefined : comp?.drink,
-                  desserts,
+                  drink: finalDrink,
+                  desserts: finalDesserts,
                   totalCost,
                 }
               }
