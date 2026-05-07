@@ -524,19 +524,31 @@ export const useMealboxStore = create<MealboxStore>()(
           })
 
           // 삼각4.5 ← 김밥5.5 기반, FF만 주먹밥으로 교체
+          // 금요일(목요일생산): 음료 제외, 컵라면 추가
           mealPlanMeals['삼각4.5'] = mealPlanMeals['김밥5.5'].map((meal, idx) => {
             const samgakFF = samgakProducts[idx % samgakProducts.length]
             const comp = meal.compositions[5500]
-            const desserts = comp?.desserts ?? []
+            const baseDesserts = comp?.desserts ?? []
             const isFriday = new Date(meal.date).getDay() === 5
-            const totalCost = samgakFF.cost + (comp?.drink?.cost ?? 0) + desserts.reduce((s, d) => s + d.cost, 0)
+            
+            let finalDesserts: Product[] = [...baseDesserts]
+            let finalDrink = comp?.drink
+            
+            if (isFriday && cupRamenPool.length > 0) {
+              // 금요일: 음료 제외, 컵라면 추가 (디저트 맨 앞에)
+              const cupRamen = cupRamenPool[idx % cupRamenPool.length]
+              finalDesserts = [cupRamen, ...baseDesserts]
+              finalDrink = undefined
+            }
+            
+            const totalCost = samgakFF.cost + (finalDrink?.cost ?? 0) + finalDesserts.reduce((s, d) => s + d.cost, 0)
             return {
               date: meal.date,
               compositions: {
                 4500: {
                   ff: samgakFF,
-                  drink: isFriday ? undefined : comp?.drink,
-                  desserts,
+                  drink: finalDrink,
+                  desserts: finalDesserts,
                   totalCost,
                 }
               }
