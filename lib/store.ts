@@ -677,10 +677,6 @@ export const useMealboxStore = create<MealboxStore>()(
             }
           })
         }
-              }
-            }
-          })
-        }
 
         // ========== 공장박스 식단 생성 ==========
         // 월요일: 샌드 단품 (FF만)
@@ -1084,7 +1080,7 @@ export const useMealboxStore = create<MealboxStore>()(
         const state = get()
         const snapshot = state.snapshots.find(s => s.id === id)
         if (!snapshot) {
-          set({ snapshotStatus: 'error', snapshotMessage: '스냅샷을 찾을 수 없습니다.' })
+          set({ snapshotStatus: 'error', snapshotMessage: '스냅샷을 찾을 �� 없습니다.' })
           return
         }
 
