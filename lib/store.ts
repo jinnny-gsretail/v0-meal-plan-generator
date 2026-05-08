@@ -317,12 +317,12 @@ export const useMealboxStore = create<MealboxStore>()(
         const isMonday = (dayOfWeek: number) => dayOfWeek === 1
 
         // 음료 그룹 선택
-        // - 월요일: 요거트 필수 → '요거트' 고정
-        // - 버거(월요일 제외): 탄산 75% / 주스 25%
+        // - 버거: 항상 탄산 100% (월요일 포함, 요거트 규칙 무시)
+        // - 월요일(버거 제외): 요거트 필수
         // - 나머지: 전날과 다른 그룹 랜덤 (요거트 허용 여부 반영)
         const pickDrinkGroup = (isBurger: boolean, prevGroup: string | null, dayOfWeek: number): string => {
-          if (isMonday(dayOfWeek)) return '요거트' // 월요일은 음료�� 요거트로 고정
-          if (isBurger) return Math.random() < 0.75 ? '탄산' : '주스'
+          if (isBurger) return '탄산' // 버거는 항상 탄산 전용 (월요일 포함)
+          if (isMonday(dayOfWeek)) return '요거트' // 월요일은 음료를 요거트로 고정
           const available = getAvailableDrinkGroups(dayOfWeek).filter(g => g !== prevGroup)
           const pool = available.length > 0 ? available : getAvailableDrinkGroups(dayOfWeek)
           return pool[Math.floor(Math.random() * pool.length)]
@@ -874,7 +874,7 @@ export const useMealboxStore = create<MealboxStore>()(
           }
           if (srcPlan === '김밥5.5' && cType === 'dessert' && cIdx === 1) {
             // 김밥5.5(C) → 삼각4.5(C), 샌드5.5(C)
-            // + 음X 식단: 김밥3.5(음X)(C=1), 샌드3.5(음X)(C=1), 삼각3.5(음X)(C=1)
+            // + 음X 식���: 김밥3.5(음X)(C=1), 샌드3.5(음X)(C=1), 삼각3.5(음X)(C=1)
             t.push(dessert('삼각4.5', 1), dessert('샌드5.5', 1))
             // 음X 식단 연동 (C = desserts[1])
             t.push(dessert('김밥3.5(음X)', 1))
@@ -897,6 +897,32 @@ export const useMealboxStore = create<MealboxStore>()(
           }
           if (srcPlan === '삼각4.5' && cType === 'dessert' && cIdx === 1) {
             t.push(dessert('김밥5.5', 1))
+          }
+
+          // ── 버거 연동 (버거3.5 ↔ 버거4.5 양방향) ──────────────────
+          // 버거3.5 수정 → 버거4.5 동기화 (같은 음료/디저트B)
+          // 버거4.5 수정 → 버거3.5 동기화 (같은 음료)
+          if (srcPlan === '버거3.5' && cType === 'drink') {
+            t.push(drink('버거4.5'), drink('버거5.5'))
+          }
+          if (srcPlan === '버거3.5' && cType === 'dessert' && cIdx === 0) {
+            // 버거3.5에는 디저트가 없지만, 혹시 있다면 4.5/5.5에 전파
+            t.push(dessert('버거4.5', 0), dessert('버거5.5', 0))
+          }
+          if (srcPlan === '버거4.5' && cType === 'drink') {
+            t.push(drink('버거3.5'), drink('버거5.5'))
+          }
+          if (srcPlan === '버거4.5' && cType === 'dessert' && cIdx === 0) {
+            t.push(dessert('버거5.5', 0))
+          }
+          if (srcPlan === '버거5.5' && cType === 'drink') {
+            t.push(drink('버거3.5'), drink('버거4.5'))
+          }
+          if (srcPlan === '버거5.5' && cType === 'dessert' && cIdx === 0) {
+            t.push(dessert('버거4.5', 0))
+          }
+          if (srcPlan === '버거5.5' && cType === 'dessert' && cIdx === 1) {
+            // 버거5.5(C) 수정은 버거5.5 단독
           }
 
           return t
