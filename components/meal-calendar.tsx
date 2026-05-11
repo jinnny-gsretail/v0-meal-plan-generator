@@ -292,55 +292,13 @@ export function MealCalendar() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month, currentMealPlanData, currentMealPlanInfo, targetCosts, startDate, endDate, viewMode])
 
-  // 선택된 식단이 없으면 안내 메시지 표시
-  if (!selectedMealPlan) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center">
-        <p className="text-muted-foreground">
-          위에서 확인하고 싶은 식단을 선택해주세요.
-        </p>
-      </div>
-    )
-  }
-
-  // 도시락: dosirakSets 데이터 확인
+  // 도시락: dosirakSets 데이터 확인 (early return 전에 선언해야 Hook 순서 유지)
   const currentDosirakPrice = isDosirak && currentMealPlanInfo ? currentMealPlanInfo.price : 0
   const currentDosirakSets = isDosirak ? dosirakSets[currentDosirakPrice] || [] : []
 
-  // 식단 데이터가 없으면 생성 안내 (도시락·프리포맷은 별도 체크)
-  if (!isDosirak && !isFreeFormat && currentMealPlanData.length === 0) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center">
-        <p className="text-muted-foreground">
-          식단이 생성되지 않았습니다. 상품을 등록하고 &apos;식단 자동 생성&apos; 버튼을 클릭해주세요.
-        </p>
-      </div>
-    )
-  }
-  
-  if (isDosirak && currentDosirakSets.length === 0) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center">
-        <p className="text-muted-foreground">
-          도시락 조합이 생성되지 않았습니다. 상품을 등록하고 &apos;식단 자동 생성&apos; 버튼을 클릭해주세요.
-        </p>
-      </div>
-    )
-  }
-
-  const handleDownloadCustomer = () => {
-    if (!startDate || !endDate) return
-    downloadCustomerExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
-  }
-
-  const handleDownloadFactory = () => {
-    if (!startDate || !endDate) return
-    downloadFactoryExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
-  }
-
   const hasData = startDate && endDate && Object.keys(mealPlanMeals).length > 0
 
-  // 교체 가능한 상품 목록 (제약 조건 필터링)
+  // 교체 가능한 상품 목록 (제약 조건 필터링) — early return 전에 선언 필수 (Hooks 규칙)
   const getAvailableProducts = useMemo(() => {
     if (!editingComponent) return []
 
@@ -477,6 +435,48 @@ export function MealCalendar() {
     const diff = avgCost - targetCost
     return { avgCost, targetCost, diff, costs }
   }, [isDosirak, currentDosirakSets, mealPlanTargetCosts, selectedMealPlan, targetCosts, currentDosirakPrice])
+
+  // ── Early returns (모든 Hook 선언 이후에 위치) ──────────────────────────────
+  if (!selectedMealPlan) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-8 text-center">
+        <p className="text-muted-foreground">
+          위에서 확인하고 싶은 식단을 선택해주세요.
+        </p>
+      </div>
+    )
+  }
+
+  if (!isDosirak && !isFreeFormat && currentMealPlanData.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-8 text-center">
+        <p className="text-muted-foreground">
+          식단이 생성되지 않았습니다. 상품을 등록하고 &apos;식단 자동 생성&apos; 버튼을 클릭해주세요.
+        </p>
+      </div>
+    )
+  }
+
+  if (isDosirak && currentDosirakSets.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-8 text-center">
+        <p className="text-muted-foreground">
+          도시락 조합이 생성되지 않았습니다. 상품을 등록하고 &apos;식단 자동 생성&apos; 버튼을 클릭해주세요.
+        </p>
+      </div>
+    )
+  }
+  // ────────────────────────────────────────────────────────────────────────────
+
+  const handleDownloadCustomer = () => {
+    if (!startDate || !endDate) return
+    downloadCustomerExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
+  }
+
+  const handleDownloadFactory = () => {
+    if (!startDate || !endDate) return
+    downloadFactoryExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
+  }
 
   return (
     <div className="space-y-4">
@@ -1127,6 +1127,7 @@ export function MealCalendar() {
               composition={selectedMeal.compositions[currentMealPlanInfo.price]}
               targetCost={targetCosts[currentMealPlanInfo.price]}
               date={selectedDate}
+              isNoDrink={currentMealPlanInfo.isNoDrink}
               onEditComponent={(componentType, componentIndex, currentProduct) => {
                 handleEditComponent(selectedDate, componentType, componentIndex, currentProduct)
               }}
@@ -1140,6 +1141,26 @@ export function MealCalendar() {
         const isFF = editingComponent.componentType === 'ff'
         const isDrink = editingComponent.componentType === 'drink'
         const dessertIdx = editingComponent.componentIndex
+        const isNoDrinkPlan = editingComponent.mealPlanName.includes('(음X)')
+
+        // 음X 식단에서 음료 슬롯 편집 시도 시 차단
+        if (isDrink && isNoDrinkPlan) {
+          return (
+            <Dialog open onOpenChange={() => setEditingComponent(null)}>
+              <DialogContent className="max-w-sm bg-card">
+                <DialogHeader>
+                  <DialogTitle className="text-foreground">음료 슬롯 차단</DialogTitle>
+                  <DialogDescription className="text-muted-foreground text-sm">
+                    <span className="font-semibold text-foreground">{editingComponent.mealPlanName}</span> 식단은 음료를 포함하지 않는 구성입니다. 디저트 슬롯만 편집할 수 있습니다.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={() => setEditingComponent(null)}>확인</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          )
+        }
 
         const labelMap: Record<string, string> = { ff: 'FF (메인 메뉴)', drink: '음료 (구성품 A)', dessert: `디저트 (구성품 ${dessertIdx === 0 ? 'B' : 'C'})` }
         const label = labelMap[editingComponent.componentType]
@@ -1598,7 +1619,7 @@ export function MealCalendar() {
         </Dialog>
       )}
 
-      {/* 식단 저장 다이얼로그 */}
+      {/* 식단 저장 다��얼로그 */}
       <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
         <DialogContent className="max-w-md bg-card">
           <DialogHeader>
@@ -1701,10 +1722,11 @@ interface MealDetailProps {
   composition: MealComposition | null
   targetCost: number
   date: string
+  isNoDrink?: boolean
   onEditComponent: (componentType: 'ff' | 'drink' | 'dessert', componentIndex: number, currentProduct: Product | null) => void
 }
 
-function MealDetail({ price, composition, targetCost, date, onEditComponent }: MealDetailProps) {
+function MealDetail({ price, composition, targetCost, date, isNoDrink, onEditComponent }: MealDetailProps) {
   const maxCost = targetCost * 1.03
   const isOverBudget = composition && composition.totalCost > maxCost
   
@@ -1761,7 +1783,7 @@ function MealDetail({ price, composition, targetCost, date, onEditComponent }: M
               </button>
             </div>
           )}
-          {composition.drink && (
+          {!isNoDrink && composition.drink && (
             <div className={`p-2 rounded border ${DRINK_COLOR.bg} ${DRINK_COLOR.border} relative group`}>
               <div className={`text-xs mb-1 ${DRINK_COLOR.text}`}>음료 ({composition.drink.group || '-'})</div>
               <div className="text-sm font-medium text-foreground">{composition.drink.name}</div>
@@ -1772,6 +1794,11 @@ function MealDetail({ price, composition, targetCost, date, onEditComponent }: M
               >
                 <Pencil className="w-3 h-3 text-muted-foreground" />
               </button>
+            </div>
+          )}
+          {isNoDrink && (
+            <div className="p-2 rounded border border-dashed border-muted-foreground/30 bg-muted/20 flex items-center justify-center">
+              <span className="text-xs text-muted-foreground/50">(음료 제외)</span>
             </div>
           )}
           {composition.desserts.map((dessert, i) => {
