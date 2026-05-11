@@ -359,6 +359,7 @@ export const useMealboxStore = create<MealboxStore>()(
         // ─────────────────────────────────────────────────────
         // 공통 식단 생성 함수: 김밥/샌드/버거
         // tiers: [{pricePoint, mealPlanName, dessertCount}]
+        // ★ 핵심 규칙: 전날과 오늘의 모든 구성품(FF, 음료, 디저트)이 달라야 함
         // ─────────────────────────────────────────────────────
         const buildStandardMeals = (
           ffList: Product[],
@@ -373,23 +374,42 @@ export const useMealboxStore = create<MealboxStore>()(
           const combinationTracker = makeCombinationTracker()
 
           let prevDrinkGroup: string | null = null
+          // ★ 전날 사용된 구성품 ID 추적 (FF, 음료, 디저트 모두)
+          let prevDayUsedIds = new Set<string>()
 
           for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
             const d = dates[dayIndex]
             const dayOfWeek = d.getDay()
             const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-            const ff = ffList[dayIndex % ffList.length]
-            const usedTodayIds = new Set<string>([ff.id])
+            
+            // ★ FF 선택: 전날 FF와 다른 것 선택
+            let ff: Product
+            const availableFFs = ffList.filter(f => !prevDayUsedIds.has(f.id))
+            if (availableFFs.length > 0) {
+              ff = availableFFs[dayIndex % availableFFs.length]
+            } else {
+              // 모든 FF가 전날 사용됨 (FF 종류가 1개인 경우) → 순환
+              ff = ffList[dayIndex % ffList.length]
+            }
+            
+            // ★ 오늘 사용되는 ID 추적 (전날 것 + FF)
+            const usedTodayIds = new Set<string>([ff.id, ...prevDayUsedIds])
 
-            // 음료 선택
+            // 음료 선택 (전날 음료 제외)
             const drinkGroup = pickDrinkGroup(isBurger, prevDrinkGroup, dayOfWeek)
             prevDrinkGroup = drinkGroup
             const drinkPool = poolByGroups(drinkProducts, [drinkGroup], dayOfWeek)
+              .filter(p => !prevDayUsedIds.has(p.id)) // ★ 전날 음료 제외
             const targetDrink = getTarget(tiers[0].mealPlanName) - ff.cost
-            const drink = selectProduct(drinkPool, targetDrink, drinkFreq, dayIndex, usedTodayIds)
+            let drink = selectProduct(drinkPool, targetDrink, drinkFreq, dayIndex, usedTodayIds)
+            // 전날 제외로 인해 선택 실패 시 전체 풀에서 재시도
+            if (!drink) {
+              const fallbackPool = poolByGroups(drinkProducts, [drinkGroup], dayOfWeek)
+              drink = selectProduct(fallbackPool, targetDrink, drinkFreq, dayIndex, new Set([ff.id]))
+            }
             if (drink) { drinkFreq.markUsed(drink.id, dayIndex); usedTodayIds.add(drink.id) }
 
-            // 디저트 선택 (최대 2개)
+            // 디저트 선택 (최대 2개, 전날 디저트 제외)
             const maxDesserts = Math.max(...tiers.map(t => t.dessertCount))
             const selectedDesserts: Product[] = []
             // 음료 그룹을 제외 목록에 포함 (요거트 음료인 경우 디저트 요거트도 자동 제외됨)
@@ -405,8 +425,15 @@ export const useMealboxStore = create<MealboxStore>()(
 
               const dGroup = pickDessertGroup(usedDessertGroups, dayOfWeek)
               usedDessertGroups.push(dGroup)
+              // ★ 전날 디저트 제외
               const dPool = poolByGroups(dessertProducts, [dGroup], dayOfWeek)
-              const dessert = selectProduct(dPool, targetDessertCost, dessertFreqs[di], dayIndex, usedTodayIds)
+                .filter(p => !prevDayUsedIds.has(p.id))
+              let dessert = selectProduct(dPool, targetDessertCost, dessertFreqs[di], dayIndex, usedTodayIds)
+              // 전날 제외로 인해 선택 실패 시 전체 풀에서 재시도
+              if (!dessert) {
+                const fallbackPool = poolByGroups(dessertProducts, [dGroup], dayOfWeek)
+                dessert = selectProduct(fallbackPool, targetDessertCost, dessertFreqs[di], dayIndex, new Set([ff.id, drink?.id ?? '']))
+              }
               if (dessert) {
                 selectedDesserts.push(dessert)
                 dessertFreqs[di].markUsed(dessert.id, dayIndex)
@@ -420,7 +447,12 @@ export const useMealboxStore = create<MealboxStore>()(
               // 중복 시 마지막 디저트를 다른 상품으로 교체 시도
               if (selectedDesserts.length > 0) {
                 const lastIdx = selectedDesserts.length - 1
-                const altPool = dessertProducts.filter(p => !usedTodayIds.has(p.id) && !selectedDesserts.slice(0, lastIdx).map(x => x.id).includes(p.id))
+                // ★ 전날 디저트도 제외
+                const altPool = dessertProducts.filter(p => 
+                  !usedTodayIds.has(p.id) && 
+                  !prevDayUsedIds.has(p.id) &&
+                  !selectedDesserts.slice(0, lastIdx).map(x => x.id).includes(p.id)
+                )
                 if (altPool.length > 0) {
                   altPool.sort((a, b) => Math.abs(a.cost - (selectedDesserts[lastIdx]?.cost ?? 0)) - Math.abs(b.cost - (selectedDesserts[lastIdx]?.cost ?? 0)))
                   selectedDesserts[lastIdx] = altPool[0]
@@ -428,6 +460,13 @@ export const useMealboxStore = create<MealboxStore>()(
               }
             }
             combinationTracker.mark([drink?.id ?? '', ...selectedDesserts.map(x => x.id)].filter(Boolean))
+            
+            // ★ 오늘 사용된 모든 구성품 ID 저장 → 내일 제외 대상
+            prevDayUsedIds = new Set<string>([
+              ff.id,
+              ...(drink ? [drink.id] : []),
+              ...selectedDesserts.map(d => d.id)
+            ])
 
             // 각 tier별로 저장
             for (const tier of tiers) {
