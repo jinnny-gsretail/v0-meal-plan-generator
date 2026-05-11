@@ -64,7 +64,11 @@ function applyRowHeights(ws: XLSX.WorkSheet, heights: { [row: number]: number })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 고객용 식단표 다운로드 (원가 비공개 & 디자인 최적화)
+// 고객용 식단표 다운로드 (원가 비공개 & B&W 전문 양식)
+// - 식단 타입별 개별 워크시트
+// - 7열 캘린더 그리드 (월~일)
+// - 셀 내 줄바꿈으로 날짜/FF/음료/디저트 배치
+// - 원가 완전 배제
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function downloadCustomerExcel(
@@ -77,162 +81,144 @@ export function downloadCustomerExcel(
 ) {
   const wb = XLSX.utils.book_new()
 
-  // 식단 그룹별 탭 구성
-  const mealGroups = [
-    { label: '가)김밥', plans: ['김밥3.5', '김밥4.5', '김밥5.5'] },
-    { label: '가-1)김밥(음X)', plans: ['김밥3.5(음X)'] },
-    { label: '나)삼각', plans: ['삼각3.5', '삼각4.5'] },
-    { label: '나-1)삼각(음X)', plans: ['삼각3.5(음X)'] },
-    { label: '다)샌드', plans: ['샌드3.5', '샌드4.5', '샌드5.5'] },
-    { label: '다-1)샌드(음X)', plans: ['샌드3.5(음X)'] },
-    { label: '라)버거', plans: ['버거3.5', '버거4.5', '버거5.5'] },
-    { label: '바)공장박스', plans: ['공장박스'] },
+  // 식단별 개별 시트 생성 (데이터가 있는 식단만)
+  const allPlans = [
+    '김밥3.5', '김밥4.5', '김밥5.5',
+    '김밥3.5(음X)',
+    '삼각3.5', '삼각4.5',
+    '삼각3.5(음X)',
+    '샌드3.5', '샌드4.5', '샌드5.5',
+    '샌드3.5(음X)',
+    '버거3.5', '버거4.5', '버거5.5',
+    '공장박스'
   ]
 
-  for (const group of mealGroups) {
-    const ws = buildCustomerCalendarSheet(group.plans, mealPlanMeals, startDate, endDate)
-    XLSX.utils.book_append_sheet(wb, ws, group.label)
+  for (const planName of allPlans) {
+    if (mealPlanMeals[planName] && mealPlanMeals[planName].length > 0) {
+      const ws = buildCustomerCalendarSheetSingle(planName, mealPlanMeals, startDate, endDate)
+      // 시트명에서 특수문자 제거 (엑셀 시트명 제한)
+      const safeSheetName = planName.replace(/[()]/g, '')
+      XLSX.utils.book_append_sheet(wb, ws, safeSheetName)
+    }
   }
   
-  // 도시락 시트
+  // 도시락 시트 (가격대별)
   if (dosirakSets && Object.keys(dosirakSets).length > 0) {
-    const dosirakWs = buildDosirakCustomerSheet(dosirakSets)
-    XLSX.utils.book_append_sheet(wb, dosirakWs, '마)도시락')
+    const pricePoints = [4500, 5500, 6500]
+    for (const pp of pricePoints) {
+      if (dosirakSets[pp] && dosirakSets[pp].length > 0) {
+        const dosirakWs = buildDosirakCustomerSheetSingle(dosirakSets[pp], pp)
+        XLSX.utils.book_append_sheet(wb, dosirakWs, `도시락${pp / 1000}`)
+      }
+    }
   }
 
   // 프리포맷 시트
   if (freeFormatData && Object.keys(freeFormatData).length > 0) {
     const freeWs = buildFreeFormatCustomerSheet(freeFormatData, startDate, endDate)
-    XLSX.utils.book_append_sheet(wb, freeWs, '사)프리포맷')
+    XLSX.utils.book_append_sheet(wb, freeWs, '프리포맷')
   }
 
-  const month = `${startDate.getFullYear()}년${String(startDate.getMonth() + 1).padStart(2, '0')}월`
-  XLSX.writeFile(wb, `밀박스25_고객식단표_${month}.xlsx`)
+  // 파일명: [고객사용]_식단표_YYYYMMDD_YYYYMMDD.xlsx
+  const startStr = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`
+  const endStr = `${endDate.getFullYear()}${String(endDate.getMonth() + 1).padStart(2, '0')}${String(endDate.getDate()).padStart(2, '0')}`
+  XLSX.writeFile(wb, `[고객사용]_식단표_${startStr}_${endStr}.xlsx`)
 }
 
-// 고객용 캘린더 시트 (7열 그리드, 원가 없음)
-function buildCustomerCalendarSheet(
-  planNames: string[],
+// 고객용 캘린더 시트 - 단일 식단 (7열 그리드, 셀 내 줄바꿈)
+function buildCustomerCalendarSheetSingle(
+  planName: string,
   mealPlanMeals: MealPlanDailyMeals,
   startDate: Date,
   endDate: Date
 ): XLSX.WorkSheet {
   const dates = getDatesInRange(startDate, endDate)
   const weeks = groupByWeek(dates)
-  const aoa: (string | number)[][] = []
+  const aoa: string[][] = []
+
+  const planInfo = ALL_MEAL_PLANS.find(m => m.name === planName)
+  const pricePoint = planInfo?.price ?? 3500
 
   // 제목
-  const firstPlan = planNames[0]
-  const ffType = firstPlan.replace(/[\d.]+\(음X\)$/, '').replace(/[\d.]+$/, '')
-  aoa.push([`밀박스25 ${ffType} 식단표`])
+  aoa.push([`${planName} 식단표`])
   aoa.push([`기간: ${toDateStr(startDate)} ~ ${toDateStr(endDate)}`])
   aoa.push([])
 
-  // 각 식단별 캘린더
-  for (const planName of planNames) {
-    const planInfo = ALL_MEAL_PLANS.find(m => m.name === planName)
-    const pricePoint = planInfo?.price ?? 3500
+  // 요일 헤더
+  aoa.push(WEEKDAY_HEADERS)
 
-    aoa.push([`[ ${planName} ]`])
-    aoa.push([])
+  // 주차별 행 생성 (한 셀에 날짜+FF+음료+디저트 줄바꿈으로 배치)
+  for (const weekDates of weeks) {
+    const row: string[] = Array(7).fill('')
 
-    // 요일 헤더
-    aoa.push(WEEKDAY_HEADERS)
+    for (const date of weekDates) {
+      let colIdx = date.getDay() - 1
+      if (colIdx < 0) colIdx = 6
 
-    // 주차별 행 생성
-    for (const weekDates of weeks) {
-      // 날짜 행
-      const dateRow: string[] = Array(7).fill('')
-      // 내용 행 (FF + 구성품)
-      const contentRows: string[][] = [
-        Array(7).fill(''), // FF
-        Array(7).fill(''), // 음료/디저트1
-        Array(7).fill(''), // 디저트2
-        Array(7).fill(''), // 디저트3 (여유분)
-      ]
+      const dateStr = toDateStr(date)
+      const meal = mealPlanMeals[planName]?.find(m => m.date === dateStr)
+      const comp = meal?.compositions[pricePoint]
 
-      for (const date of weekDates) {
-        // 월요일=0, 화=1, ..., 일=6 (WEEKDAY_HEADERS 순서에 맞춤)
-        let colIdx = date.getDay() - 1
-        if (colIdx < 0) colIdx = 6 // 일요일은 마지막
-
-        dateRow[colIdx] = formatDateShort(date)
-
-        const dateStr = toDateStr(date)
-        const meal = mealPlanMeals[planName]?.find(m => m.date === dateStr)
-        const comp = meal?.compositions[pricePoint]
-
-        if (comp) {
-          // FF (볼드 표시를 위해 ★ 마킹)
-          contentRows[0][colIdx] = comp.ff?.name ? `★ ${comp.ff.name}` : ''
-          // 음료
-          if (comp.drink) {
-            contentRows[1][colIdx] = comp.drink.name
-          }
-          // 디저트들
-          comp.desserts.forEach((d, i) => {
-            if (i + 1 < contentRows.length) {
-              contentRows[i + 1][colIdx] = contentRows[i + 1][colIdx] 
-                ? `${contentRows[i + 1][colIdx]} / ${d.name}` 
-                : d.name
-            } else if (i === 0 && !comp.drink) {
-              // 음료 없는 경우 디저트가 음료 자리에
-              contentRows[1][colIdx] = d.name
-            }
-          })
+      // 셀 내용: 날짜 + FF + 음료 + 디저트 (줄바꿈)
+      const lines: string[] = []
+      lines.push(formatDateShort(date))
+      
+      if (comp) {
+        if (comp.ff?.name) {
+          lines.push(`[${comp.ff.name}]`)
+        }
+        if (comp.drink?.name) {
+          lines.push(comp.drink.name)
+        }
+        for (const d of comp.desserts) {
+          lines.push(d.name)
         }
       }
 
-      aoa.push(dateRow)
-      for (const row of contentRows) {
-        // 빈 행은 건너뛰기
-        if (row.some(cell => cell !== '')) {
-          aoa.push(row)
-        }
-      }
-      aoa.push(Array(7).fill('')) // 주차 구분 빈 행
+      row[colIdx] = lines.join('\n')
     }
 
-    aoa.push([])
+    aoa.push(row)
   }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa)
-  applyColumnWidths(ws, [15, 15, 15, 15, 15, 15, 15])
+  applyColumnWidths(ws, [18, 18, 18, 18, 18, 18, 18])
+  
+  // 행 높이 설정 (셀 내 줄바꿈을 위해)
+  const rowHeights: { [row: number]: number } = {}
+  for (let i = 4; i < aoa.length; i++) {
+    rowHeights[i] = 80 // 내용 행은 높이 80pt
+  }
+  applyRowHeights(ws, rowHeights)
+  
   return ws
 }
 
-// 도시락 고객용 시트 (원가 없음)
-function buildDosirakCustomerSheet(dosirakSets: DosirakSets): XLSX.WorkSheet {
-  const aoa: (string | number)[][] = []
+// 도시락 고객용 시트 - 단일 가격대 (원가 없음)
+function buildDosirakCustomerSheetSingle(
+  sets: { setNumber: number; ff: any; drink: any; desserts: any[]; totalCost: number }[],
+  pricePoint: number
+): XLSX.WorkSheet {
+  const aoa: string[][] = []
 
-  aoa.push(['밀박스25 도시락 식단표 - 5개 고정 조합'])
-  aoa.push(['※ 도시락은 날짜와 무관하게 5개 고정 조합으로 운영됩니다.'])
+  aoa.push([`도시락${pricePoint / 1000} 식단표`])
+  aoa.push(['※ 5개 고정 조합으로 운영됩니다.'])
   aoa.push([])
+  aoa.push(['조합', '도시락', '음료', '디저트'])
 
-  const pricePoints = [4500, 5500, 6500]
-  const planNames = ['도시락4.5', '도시락5.5', '도시락6.5']
-
-  for (let i = 0; i < pricePoints.length; i++) {
-    const pp = pricePoints[i]
-    const planName = planNames[i]
-    const sets = dosirakSets[pp] || []
-
-    aoa.push([`[ ${planName} ]`])
-    aoa.push(['조합', '도시락', '음료', '디저트'])
-
-    for (const set of sets) {
-      const dessertNames = set.desserts.map(d => d.name).join(', ') || '-'
-      aoa.push([
-        `조합 ${set.setNumber}`,
-        set.ff?.name || '-',
-        set.drink?.name || '-',
-        dessertNames
-      ])
-    }
-    aoa.push([])
+  for (const set of sets) {
+    const dessertNames = set.desserts.map((d: any) => d.name).join(', ') || '-'
+    aoa.push([
+      `조합 ${set.setNumber}`,
+      set.ff?.name || '-',
+      set.drink?.name || '-',
+      dessertNames
+    ])
   }
 
-  return XLSX.utils.aoa_to_sheet(aoa)
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  applyColumnWidths(ws, [10, 20, 15, 30])
+  return ws
 }
 
 // 프리포맷 고객용 시트 (원가 없음)
