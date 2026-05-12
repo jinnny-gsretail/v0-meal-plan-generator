@@ -468,9 +468,9 @@ export function MealCalendar() {
   }
   // ────────────────────────────────────────────────────────────────────────────
 
-  const handleDownloadCustomer = () => {
+  const handleDownloadCustomer = async () => {
     if (!startDate || !endDate) return
-    downloadCustomerExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
+    await downloadCustomerExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
   }
 
   const handleDownloadFactory = () => {
