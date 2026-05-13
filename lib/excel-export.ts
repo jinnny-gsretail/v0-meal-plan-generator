@@ -600,146 +600,225 @@ export async function downloadFactoryExcel(
   saveAs(blob, fileName)
 }
 
-// 공장용 캘린더 시트 (7열 그리드 + 원가 + 주차별 평균)
-function buildFactoryCalendarSheet(
-  planNames: string[],
+// ─────────────────────────────────────────────────────────────────────────────
+// 공장용 ExcelJS 시트 빌더
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 공장용 캘린더 시트 (ExcelJS) - 1메뉴 1셀, 일요일 시작, 블록 테두리
+function buildFactoryCalendarSheetExcelJS(
+  workbook: ExcelJS.Workbook,
+  planName: string,
   mealPlanMeals: MealPlanDailyMeals,
   mealPlanTargetCosts: MealPlanTargetCosts,
   startDate: Date,
   endDate: Date
-): XLSX.WorkSheet {
+) {
+  const safeSheetName = planName.replace(/[()]/g, '').substring(0, 31)
+  const worksheet = workbook.addWorksheet(safeSheetName)
+  
   const dates = getDatesInRange(startDate, endDate)
-  const weeks = groupByWeek(dates)
-  const aoa: (string | number)[][] = []
+  const weeks = groupByWeekSunday(dates)
+  
+  const planInfo = ALL_MEAL_PLANS.find(m => m.name === planName)
+  const pricePoint = planInfo?.price ?? 3500
+  const targetCost = mealPlanTargetCosts[planName] ?? MEAL_PLAN_COST_CONFIGS.find(c => c.mealPlanName === planName)?.defaultCost ?? 0
 
-  // 제목
-  const firstPlan = planNames[0]
-  const ffType = firstPlan.replace(/[\d.]+\(음X\)$/, '').replace(/[\d.]+$/, '')
-  aoa.push([`밀박스25 ${ffType} 공장 식단표 [생산일 기준: D-1]`])
-  aoa.push([`기간: ${toDateStr(startDate)} ~ ${toDateStr(endDate)}`])
-  aoa.push([])
-
-  // 각 식단별 캘린더
-  for (const planName of planNames) {
-    const planInfo = ALL_MEAL_PLANS.find(m => m.name === planName)
-    const pricePoint = planInfo?.price ?? 3500
-    const targetCost = mealPlanTargetCosts[planName] ?? MEAL_PLAN_COST_CONFIGS.find(c => c.mealPlanName === planName)?.defaultCost ?? 0
-
-    aoa.push([`[ ${planName} ] 목표원가: ${targetCost}원`])
-    aoa.push([])
-
-    // 요일 헤더 + 주차 평균 열
-    aoa.push([...WEEKDAY_HEADERS, '주차 평균'])
-
-    let weekNumber = 1
-    const weeklyTotals: { sum: number; count: number }[] = []
-
-    // 주차별 행 생성
-    for (const weekDates of weeks) {
-      let weekSum = 0
-      let weekCount = 0
-
-      // 날짜 행 (D-1 기준)
-      const dateRow: string[] = Array(7).fill('')
-      // 배송일 행
-      const deliveryRow: string[] = Array(7).fill('')
-      // 내용 행들
-      const ffRow: string[] = Array(7).fill('')
-      const ffCostRow: string[] = Array(7).fill('')
-      const drinkRow: string[] = Array(7).fill('')
-      const drinkCostRow: string[] = Array(7).fill('')
-      const dessertRow: string[] = Array(7).fill('')
-      const dessertCostRow: string[] = Array(7).fill('')
-      const totalRow: string[] = Array(7).fill('')
-
-      for (const date of weekDates) {
-        let colIdx = date.getDay() - 1
-        if (colIdx < 0) colIdx = 6
-
-        // D-1 기준: 생산일 = 배송일 - 1
-        const productionDate = new Date(date)
-        productionDate.setDate(productionDate.getDate() - 1)
-
-        dateRow[colIdx] = `생산: ${formatDateShort(productionDate)}`
-        deliveryRow[colIdx] = `배송: ${formatDateShort(date)}`
-
-        const dateStr = toDateStr(date)
-        const meal = mealPlanMeals[planName]?.find(m => m.date === dateStr)
-        const comp = meal?.compositions[pricePoint]
-
-        if (comp) {
-          ffRow[colIdx] = comp.ff?.name ?? '-'
-          ffCostRow[colIdx] = comp.ff ? `${comp.ff.cost}원` : ''
-
-          if (comp.drink) {
-            drinkRow[colIdx] = comp.drink.name
-            drinkCostRow[colIdx] = `${comp.drink.cost}원`
-          }
-
-          const dessertNames = comp.desserts.map(d => d.name).join(' / ')
-          const dessertCost = comp.desserts.reduce((s, d) => s + d.cost, 0)
-          dessertRow[colIdx] = dessertNames || '-'
-          dessertCostRow[colIdx] = dessertCost > 0 ? `${dessertCost}원` : ''
-
-          // 합계 (초과 시 [초과] 표기)
-          const isOver = comp.totalCost > targetCost * 1.03
-          totalRow[colIdx] = isOver 
-            ? `[초과] ${comp.totalCost}원` 
-            : `${comp.totalCost}원`
-
-          weekSum += comp.totalCost
-          weekCount++
-        }
-      }
-
-      // 주차 평균 계산
-      const weekAvg = weekCount > 0 ? Math.round(weekSum / weekCount) : 0
-      weeklyTotals.push({ sum: weekSum, count: weekCount })
-
-      aoa.push([...dateRow, `${weekNumber}주차`])
-      aoa.push([...deliveryRow, ''])
-      aoa.push([...ffRow, ''])
-      aoa.push([...ffCostRow, ''])
-      if (drinkRow.some(c => c !== '')) {
-        aoa.push([...drinkRow, ''])
-        aoa.push([...drinkCostRow, ''])
-      }
-      if (dessertRow.some(c => c !== '')) {
-        aoa.push([...dessertRow, ''])
-        aoa.push([...dessertCostRow, ''])
-      }
-      aoa.push([...totalRow, weekCount > 0 ? `평균: ${weekAvg}원` : ''])
-      aoa.push(Array(8).fill('')) // 주차 구분
-
-      weekNumber++
-    }
-
-    // 총괄 요약
-    const totalSum = weeklyTotals.reduce((s, w) => s + w.sum, 0)
-    const totalCount = weeklyTotals.reduce((s, w) => s + w.count, 0)
-    const totalAvg = totalCount > 0 ? Math.round(totalSum / totalCount) : 0
-    const diff = totalAvg - targetCost
-
-    aoa.push(['[총괄 요약]'])
-    aoa.push(['운영일수', totalCount, '목표원가', targetCost, '평균원가', totalAvg, '원가차이', diff >= 0 ? `+${diff}원` : `${diff}원`])
-    aoa.push([])
+  // 열 너비 설정 (7열 + 주차평균 열)
+  for (let col = 1; col <= 8; col++) {
+    worksheet.getColumn(col).width = col === 8 ? 12 : 20
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa)
-  applyColumnWidths(ws, [18, 18, 18, 18, 18, 18, 18, 12])
-  return ws
+  let rowNum = 1
+
+  // 제목
+  worksheet.getCell(rowNum, 1).value = `${planName} 공장 식단표 [생산일 D-1 기준]`
+  worksheet.getCell(rowNum, 1).font = { bold: true, size: 14 }
+  rowNum++
+  worksheet.getCell(rowNum, 1).value = `기간: ${toDateStr(startDate)} ~ ${toDateStr(endDate)} | 목표원가: ${targetCost}원`
+  rowNum += 2
+
+  // 요일 헤더 (일요일 시작)
+  const headerRow = worksheet.getRow(rowNum)
+  FACTORY_WEEKDAY_HEADERS.forEach((day, idx) => {
+    const cell = headerRow.getCell(idx + 1)
+    cell.value = day
+    cell.font = { bold: true }
+    cell.alignment = { horizontal: 'center', vertical: 'middle' }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } }
+    cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
+  })
+  headerRow.getCell(8).value = '주차평균'
+  headerRow.getCell(8).font = { bold: true }
+  headerRow.getCell(8).alignment = { horizontal: 'center', vertical: 'middle' }
+  headerRow.height = 20
+  rowNum++
+
+  const weeklyTotals: { sum: number; count: number }[] = []
+
+  // 주차별 블록 생성
+  for (let weekIdx = 0; weekIdx < weeks.length; weekIdx++) {
+    const weekDates = weeks[weekIdx]
+    let weekSum = 0
+    let weekCount = 0
+    const blockStartRow = rowNum
+
+    // 행 구조: 생산일 | FF | FF단가 | 음료 | 음료단가 | 디저트1 | 디저트1단가 | 디저트2 | 디저트2단가 | 합계
+    // 간소화: 생산일/배송일 | FF(단가) | 음료(단가) | 디저트(단가) | 합계 → 5행 고정
+    const ROW_LABELS = ['생산/배송', 'FF', '음료', '디저트', '합계']
+    
+    for (let r = 0; r < ROW_LABELS.length; r++) {
+      const row = worksheet.getRow(rowNum + r)
+      row.height = 18
+    }
+
+    for (const date of weekDates) {
+      const colIdx = date.getDay() + 1 // 일요일=0 → 1열
+
+      const productionDate = new Date(date)
+      productionDate.setDate(productionDate.getDate() - 1)
+
+      const dateStr = toDateStr(date)
+      const meal = mealPlanMeals[planName]?.find(m => m.date === dateStr)
+      const comp = meal?.compositions[pricePoint]
+
+      // 행0: 생산/배송일
+      const cell0 = worksheet.getCell(rowNum, colIdx)
+      cell0.value = `${formatDateShort(productionDate)}\n(${formatDateShort(date)})`
+      cell0.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+      applyDayColor(cell0, date)
+
+      if (comp) {
+        // 행1: FF + 단가
+        const cell1 = worksheet.getCell(rowNum + 1, colIdx)
+        cell1.value = comp.ff ? `${comp.ff.name}\n(${comp.ff.cost}원)` : '-'
+        cell1.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+
+        // 행2: 음료 + 단가
+        const cell2 = worksheet.getCell(rowNum + 2, colIdx)
+        cell2.value = comp.drink ? `${comp.drink.name}\n(${comp.drink.cost}원)` : '-'
+        cell2.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+
+        // 행3: 디저트 + 단가
+        const cell3 = worksheet.getCell(rowNum + 3, colIdx)
+        if (comp.desserts.length > 0) {
+          const dessertText = comp.desserts.map(d => `${d.name}(${d.cost})`).join('\n')
+          cell3.value = dessertText
+        } else {
+          cell3.value = '-'
+        }
+        cell3.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+
+        // 행4: 합계
+        const cell4 = worksheet.getCell(rowNum + 4, colIdx)
+        const isOver = comp.totalCost > targetCost * 1.03
+        cell4.value = `${comp.totalCost}원`
+        cell4.alignment = { horizontal: 'center', vertical: 'middle' }
+        cell4.font = { bold: true, color: isOver ? { argb: 'FFFF0000' } : undefined }
+        if (isOver) {
+          cell4.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCCCC' } }
+        }
+
+        weekSum += comp.totalCost
+        weekCount++
+      }
+    }
+
+    // 주차 평균 (8열)
+    const weekAvg = weekCount > 0 ? Math.round(weekSum / weekCount) : 0
+    weeklyTotals.push({ sum: weekSum, count: weekCount })
+    
+    const avgCell = worksheet.getCell(rowNum + 2, 8)
+    avgCell.value = `${weekIdx + 1}주차\n평균: ${weekAvg}원`
+    avgCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+    avgCell.font = { bold: true }
+
+    // 블록 외곽 테두리
+    applyBlockBorder(worksheet, blockStartRow, rowNum + 4, 1, 7)
+
+    rowNum += 6 // 5행 + 1빈행
+  }
+
+  // 총괄 요약
+  const totalSum = weeklyTotals.reduce((s, w) => s + w.sum, 0)
+  const totalCount = weeklyTotals.reduce((s, w) => s + w.count, 0)
+  const totalAvg = totalCount > 0 ? Math.round(totalSum / totalCount) : 0
+  const diff = totalAvg - targetCost
+
+  rowNum++
+  worksheet.getCell(rowNum, 1).value = '[총괄 요약]'
+  worksheet.getCell(rowNum, 1).font = { bold: true }
+  rowNum++
+  worksheet.getCell(rowNum, 1).value = `운영일수: ${totalCount}일`
+  worksheet.getCell(rowNum, 2).value = `목표원가: ${targetCost}원`
+  worksheet.getCell(rowNum, 3).value = `평균원가: ${totalAvg}원`
+  worksheet.getCell(rowNum, 4).value = `차이: ${diff >= 0 ? '+' : ''}${diff}원`
+  worksheet.getCell(rowNum, 4).font = { color: diff > 0 ? { argb: 'FFFF0000' } : { argb: 'FF008800' } }
+
+  // Clean Canvas View 적용
+  applyCleanCanvasView(worksheet, 8)
 }
 
-// 도시락 공장용 시트 (원가 포함)
-function buildDosirakFactorySheet(
+// 블록 외곽 테두리 적용
+function applyBlockBorder(
+  worksheet: ExcelJS.Worksheet,
+  startRow: number,
+  endRow: number,
+  startCol: number,
+  endCol: number
+) {
+  for (let r = startRow; r <= endRow; r++) {
+    for (let c = startCol; c <= endCol; c++) {
+      const cell = worksheet.getCell(r, c)
+      const border: Partial<ExcelJS.Borders> = {}
+      
+      if (r === startRow) border.top = { style: 'medium' }
+      if (r === endRow) border.bottom = { style: 'medium' }
+      if (c === startCol) border.left = { style: 'medium' }
+      if (c === endCol) border.right = { style: 'medium' }
+      
+      // 내부 셀은 얇은 테두리
+      if (r !== startRow) border.top = border.top ?? { style: 'thin', color: { argb: 'FFD0D0D0' } }
+      if (r !== endRow) border.bottom = border.bottom ?? { style: 'thin', color: { argb: 'FFD0D0D0' } }
+      if (c !== startCol) border.left = border.left ?? { style: 'thin', color: { argb: 'FFD0D0D0' } }
+      if (c !== endCol) border.right = border.right ?? { style: 'thin', color: { argb: 'FFD0D0D0' } }
+      
+      cell.border = border
+    }
+  }
+}
+
+// 요일별 색상 적용
+function applyDayColor(cell: ExcelJS.Cell, date: Date) {
+  const dayOfWeek = date.getDay()
+  const isHoliday = isKRHoliday(date)
+  
+  if (isHoliday || dayOfWeek === 0) {
+    cell.font = { color: { argb: 'FFFF0000' } }
+  } else if (dayOfWeek === 6) {
+    cell.font = { color: { argb: 'FF0000FF' } }
+  }
+}
+
+// 도시락 공장용 시트 (ExcelJS)
+function buildDosirakFactorySheetExcelJS(
+  workbook: ExcelJS.Workbook,
   dosirakSets: DosirakSets,
   mealPlanTargetCosts: MealPlanTargetCosts
-): XLSX.WorkSheet {
-  const aoa: (string | number)[][] = []
+) {
+  const worksheet = workbook.addWorksheet('도시락_공장')
 
-  aoa.push(['밀박스25 도시락 공장 식단표 - 5개 고정 조합'])
-  aoa.push(['※ 상시 생산 품목 (날짜 무관)'])
-  aoa.push([])
+  // 열 너비 설정
+  const colWidths = [10, 18, 8, 15, 8, 25, 10, 12, 12]
+  colWidths.forEach((w, i) => { worksheet.getColumn(i + 1).width = w })
+
+  let rowNum = 1
+
+  // 제목
+  worksheet.getCell(rowNum, 1).value = '도시락 공장 식단표 - 5개 고정 조합'
+  worksheet.getCell(rowNum, 1).font = { bold: true, size: 14 }
+  rowNum++
+  worksheet.getCell(rowNum, 1).value = '※ 상시 생산 품목 (날짜 무관)'
+  rowNum += 2
 
   const pricePoints = [4500, 5500, 6500]
   const planNames = ['도시락4.5', '도시락5.5', '도시락6.5']
@@ -748,18 +827,35 @@ function buildDosirakFactorySheet(
     const pp = pricePoints[i]
     const planName = planNames[i]
     const sets = dosirakSets[pp] || []
+    if (sets.length === 0) continue
+    
     const target = mealPlanTargetCosts[planName] ?? MEAL_PLAN_COST_CONFIGS.find(c => c.mealPlanName === planName)?.defaultCost ?? 0
 
-    aoa.push([`[ ${planName} ] 목표원가: ${target}원`])
-    aoa.push(['조합', '도시락', '단가', '음료', '단가', '디저트', '단가', '세트 합계', '목표대비'])
+    // 가격대 제목
+    worksheet.getCell(rowNum, 1).value = `[ ${planName} ] 목표원가: ${target}원`
+    worksheet.getCell(rowNum, 1).font = { bold: true }
+    rowNum++
 
+    // 헤더
+    const headers = ['조합', '도시락', '단가', '음료', '단가', '디저트', '단가', '합계', '차이']
+    headers.forEach((h, idx) => {
+      const cell = worksheet.getCell(rowNum, idx + 1)
+      cell.value = h
+      cell.font = { bold: true }
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } }
+      cell.alignment = { horizontal: 'center', vertical: 'middle' }
+      cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
+    })
+    rowNum++
+
+    // 조합 데이터
     for (const set of sets) {
-      const dessertNames = set.desserts.map(d => d.name).join(', ') || '-'
-      const dessertCost = set.desserts.reduce((s, d) => s + d.cost, 0)
+      const dessertNames = set.desserts.map((d: any) => d.name).join(', ') || '-'
+      const dessertCost = set.desserts.reduce((s: number, d: any) => s + d.cost, 0)
       const diff = set.totalCost - target
       const isOver = set.totalCost > target * 1.03
 
-      aoa.push([
+      const rowData = [
         `조합 ${set.setNumber}`,
         set.ff?.name || '-',
         set.ff?.cost ?? 0,
@@ -768,103 +864,155 @@ function buildDosirakFactorySheet(
         dessertNames,
         dessertCost,
         set.totalCost,
-        isOver ? `[초과] +${diff}원` : (diff >= 0 ? `+${diff}원` : `${diff}원`)
-      ])
+        diff >= 0 ? `+${diff}` : `${diff}`
+      ]
+
+      rowData.forEach((val, idx) => {
+        const cell = worksheet.getCell(rowNum, idx + 1)
+        cell.value = val
+        cell.alignment = { horizontal: 'center', vertical: 'middle' }
+        cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
+        
+        if (idx === 7 && isOver) {
+          cell.font = { bold: true, color: { argb: 'FFFF0000' } }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCCCC' } }
+        }
+        if (idx === 8) {
+          cell.font = { color: diff > 0 ? { argb: 'FFFF0000' } : { argb: 'FF008800' } }
+        }
+      })
+      rowNum++
     }
 
-    // 평균 원가
+    // 평균
     if (sets.length > 0) {
-      const avg = Math.round(sets.reduce((s, set) => s + set.totalCost, 0) / sets.length)
-      const total = sets.reduce((s, set) => s + set.totalCost, 0)
+      const avg = Math.round(sets.reduce((s: number, set: any) => s + set.totalCost, 0) / sets.length)
       const avgDiff = avg - target
-      aoa.push([])
-      aoa.push(['', '', '', '', '', '', '평균', avg, avgDiff >= 0 ? `+${avgDiff}원` : `${avgDiff}원`])
+      rowNum++
+      worksheet.getCell(rowNum, 7).value = '평균'
+      worksheet.getCell(rowNum, 7).font = { bold: true }
+      worksheet.getCell(rowNum, 8).value = avg
+      worksheet.getCell(rowNum, 8).font = { bold: true }
+      worksheet.getCell(rowNum, 9).value = avgDiff >= 0 ? `+${avgDiff}` : `${avgDiff}`
+      worksheet.getCell(rowNum, 9).font = { color: avgDiff > 0 ? { argb: 'FFFF0000' } : { argb: 'FF008800' } }
     }
-    aoa.push([])
+
+    rowNum += 2
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa)
-  applyColumnWidths(ws, [10, 15, 8, 12, 8, 20, 8, 10, 12])
-  return ws
+  applyCleanCanvasView(worksheet, 9)
 }
 
-// 프리포맷 공장용 시트 (D-1 + 원가)
-function buildFreeFormatFactorySheet(
+// 프리포맷 공장용 시트 (ExcelJS)
+function buildFreeFormatFactorySheetExcelJS(
+  workbook: ExcelJS.Workbook,
   freeFormatData: FreeFormatData,
   startDate: Date,
   endDate: Date
-): XLSX.WorkSheet {
+) {
+  const worksheet = workbook.addWorksheet('프리포맷_공장')
   const dates = getDatesInRange(startDate, endDate)
-  const weeks = groupByWeek(dates)
-  const aoa: (string | number)[][] = []
+  const weeks = groupByWeekSunday(dates)
 
-  aoa.push(['밀박스25 프리포맷 공장 식단표 [생산일 기준: D-1]'])
-  aoa.push(['※ 자유 구성 식단'])
-  aoa.push([])
+  // 열 너비
+  for (let col = 1; col <= 8; col++) {
+    worksheet.getColumn(col).width = col === 8 ? 12 : 18
+  }
 
-  // 요일 헤더
-  aoa.push([...WEEKDAY_HEADERS, '주차 평균'])
+  let rowNum = 1
 
-  let weekNumber = 1
+  // 제목
+  worksheet.getCell(rowNum, 1).value = '프리포맷 공장 식단표 [생산일 D-1 기준]'
+  worksheet.getCell(rowNum, 1).font = { bold: true, size: 14 }
+  rowNum++
+  worksheet.getCell(rowNum, 1).value = `기간: ${toDateStr(startDate)} ~ ${toDateStr(endDate)}`
+  rowNum += 2
 
-  for (const weekDates of weeks) {
+  // 요일 헤더 (일요일 시작)
+  const headerRow = worksheet.getRow(rowNum)
+  FACTORY_WEEKDAY_HEADERS.forEach((day, idx) => {
+    const cell = headerRow.getCell(idx + 1)
+    cell.value = day
+    cell.font = { bold: true }
+    cell.alignment = { horizontal: 'center', vertical: 'middle' }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } }
+  })
+  headerRow.getCell(8).value = '주차'
+  headerRow.getCell(8).font = { bold: true }
+  rowNum++
+
+  for (let weekIdx = 0; weekIdx < weeks.length; weekIdx++) {
+    const weekDates = weeks[weekIdx]
     let weekSum = 0
     let weekCount = 0
+    const blockStartRow = rowNum
 
-    const dateRow: string[] = Array(7).fill('')
-    const deliveryRow: string[] = Array(7).fill('')
-    const slotRows: string[][] = Array.from({ length: 5 }, () => Array(7).fill(''))
-    const costRows: string[][] = Array.from({ length: 5 }, () => Array(7).fill(''))
-    const totalRow: string[] = Array(7).fill('')
+    // 최대 슬롯 수 계산
+    let maxSlots = 1
+    for (const date of weekDates) {
+      const dateStr = toDateStr(date)
+      const dayData = freeFormatData[dateStr]
+      if (dayData?.slots) {
+        maxSlots = Math.max(maxSlots, dayData.slots.length)
+      }
+    }
+
+    // 행 구조: 생산/배송 + 슬롯들 + 합계
+    const totalRows = 1 + maxSlots + 1
 
     for (const date of weekDates) {
-      let colIdx = date.getDay() - 1
-      if (colIdx < 0) colIdx = 6
+      const colIdx = date.getDay() + 1
 
       const productionDate = new Date(date)
       productionDate.setDate(productionDate.getDate() - 1)
-
-      dateRow[colIdx] = `생산: ${formatDateShort(productionDate)}`
-      deliveryRow[colIdx] = `배송: ${formatDateShort(date)}`
 
       const dateStr = toDateStr(date)
       const dayData = freeFormatData[dateStr]
       const slots = dayData?.slots ?? []
       const totalCost = slots.reduce((s, sl) => s + sl.cost, 0)
 
+      // 행0: 생산/배송일
+      const cell0 = worksheet.getCell(rowNum, colIdx)
+      cell0.value = `${formatDateShort(productionDate)}\n(${formatDateShort(date)})`
+      cell0.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+      applyDayColor(cell0, date)
+
+      // 슬롯들
       slots.forEach((slot, i) => {
-        if (i < 5) {
-          slotRows[i][colIdx] = slot.customText ?? slot.product?.name ?? ''
-          costRows[i][colIdx] = slot.cost > 0 ? `${slot.cost}원` : ''
-        }
+        const cell = worksheet.getCell(rowNum + 1 + i, colIdx)
+        const text = slot.customText ?? slot.product?.name ?? ''
+        cell.value = slot.cost > 0 ? `${text}\n(${slot.cost}원)` : text
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
       })
 
+      // 합계
       if (totalCost > 0) {
-        totalRow[colIdx] = `합계: ${totalCost}원`
+        const totalCell = worksheet.getCell(rowNum + 1 + maxSlots, colIdx)
+        totalCell.value = `합계: ${totalCost}원`
+        totalCell.font = { bold: true }
+        totalCell.alignment = { horizontal: 'center', vertical: 'middle' }
         weekSum += totalCost
         weekCount++
       }
     }
 
+    // 주차 평균
     const weekAvg = weekCount > 0 ? Math.round(weekSum / weekCount) : 0
+    const avgCell = worksheet.getCell(rowNum + Math.floor(totalRows / 2), 8)
+    avgCell.value = `${weekIdx + 1}주차\n평균: ${weekAvg}원`
+    avgCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+    avgCell.font = { bold: true }
 
-    aoa.push([...dateRow, `${weekNumber}주차`])
-    aoa.push([...deliveryRow, ''])
-    for (let i = 0; i < 5; i++) {
-      if (slotRows[i].some(c => c !== '')) {
-        aoa.push([...slotRows[i], ''])
-        if (costRows[i].some(c => c !== '')) {
-          aoa.push([...costRows[i], ''])
-        }
-      }
+    // 블록 테두리
+    applyBlockBorder(worksheet, blockStartRow, rowNum + totalRows - 1, 1, 7)
+
+    // 행 높이
+    for (let r = rowNum; r < rowNum + totalRows; r++) {
+      worksheet.getRow(r).height = 18
     }
-    aoa.push([...totalRow, weekCount > 0 ? `평균: ${weekAvg}원` : ''])
-    aoa.push(Array(8).fill(''))
 
-    weekNumber++
+    rowNum += totalRows + 1
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa)
-  applyColumnWidths(ws, [18, 18, 18, 18, 18, 18, 18, 12])
-  return ws
+  applyCleanCanvasView(worksheet, 8)
 }

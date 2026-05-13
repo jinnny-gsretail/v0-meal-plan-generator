@@ -276,7 +276,7 @@ export function MealCalendar() {
     
     const totalCost = allCosts.reduce((a, b) => a + b, 0)
     const avgCost = Math.round(totalCost / allCosts.length)
-    // 공장박스는 mealPlanTargetCosts에서 고정 원가 963원 참조, 나머지는 가격대 기준
+    // 공장박스는 mealPlanTargetCosts에서 고정 원가 963원 참조, 나머지�� 가격대 기준
     const targetCost = selectedMealPlan === '공장박스'
       ? (mealPlanTargetCosts['공장박스'] ?? 963)
       : targetCosts[currentMealPlanInfo.price]
@@ -473,9 +473,9 @@ export function MealCalendar() {
     await downloadCustomerExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
   }
 
-  const handleDownloadFactory = () => {
+  const handleDownloadFactory = async () => {
     if (!startDate || !endDate) return
-    downloadFactoryExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
+    await downloadFactoryExcel(mealPlanMeals, mealPlanTargetCosts, startDate, endDate, dosirakSets, freeFormatData)
   }
 
   return (
