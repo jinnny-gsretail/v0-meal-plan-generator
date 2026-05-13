@@ -601,15 +601,18 @@ export async function downloadFactoryExcel(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 공장용 ExcelJS 시트 빌더
+// 공장용 ExcelJS 시트 빌더 (Final Refined Version)
+// - 원가 정보 완전 제거 (보안)
+// - 6행 블록 구조: 생산일 + 메뉴1~4 + 원가합계(숫자만)
+// - A1:G2 병합 헤더, 열너비 35 고정, 내부 격자선 제거
 // ─────────────────────────────────────────────────────────────────────────────
 
-// 공장용 캘린더 시트 (ExcelJS) - 1메뉴 1셀, 일요일 시작, 블록 테두리
+// 공장용 캘린더 시트 (Precision Version)
 function buildFactoryCalendarSheetExcelJS(
   workbook: ExcelJS.Workbook,
   planName: string,
   mealPlanMeals: MealPlanDailyMeals,
-  mealPlanTargetCosts: MealPlanTargetCosts,
+  _mealPlanTargetCosts: MealPlanTargetCosts, // 보안상 사용하지 않음
   startDate: Date,
   endDate: Date
 ) {
@@ -621,59 +624,57 @@ function buildFactoryCalendarSheetExcelJS(
   
   const planInfo = ALL_MEAL_PLANS.find(m => m.name === planName)
   const pricePoint = planInfo?.price ?? 3500
-  const targetCost = mealPlanTargetCosts[planName] ?? MEAL_PLAN_COST_CONFIGS.find(c => c.mealPlanName === planName)?.defaultCost ?? 0
 
-  // 열 너비 설정 (7열 + 주차평균 열)
-  for (let col = 1; col <= 8; col++) {
-    worksheet.getColumn(col).width = col === 8 ? 12 : 20
+  // ★ 열 너비: A~G = 35 고정
+  for (let col = 1; col <= 7; col++) {
+    worksheet.getColumn(col).width = 35
   }
 
-  let rowNum = 1
+  // ★ 헤더 병합 (A1:G2) + 가로/세로 가운데 맞춤
+  worksheet.mergeCells('A1:G2')
+  const headerCell = worksheet.getCell('A1')
+  headerCell.value = `${planName} 공장 식단표`
+  headerCell.font = { bold: true, size: 16 }
+  headerCell.alignment = { horizontal: 'center', vertical: 'middle' }
+  worksheet.getRow(1).height = 20
+  worksheet.getRow(2).height = 20
 
-  // 제목
-  worksheet.getCell(rowNum, 1).value = `${planName} 공장 식단표 [생산일 D-1 기준]`
-  worksheet.getCell(rowNum, 1).font = { bold: true, size: 14 }
-  rowNum++
-  worksheet.getCell(rowNum, 1).value = `기간: ${toDateStr(startDate)} ~ ${toDateStr(endDate)} | 목표원가: ${targetCost}원`
-  rowNum += 2
+  let rowNum = 3
 
-  // 요일 헤더 (일요일 시작)
-  const headerRow = worksheet.getRow(rowNum)
+  // 요일 헤더 (일요일 시작) - 색상 쉐이딩 적용
+  const dayHeaderRow = worksheet.getRow(rowNum)
+  dayHeaderRow.height = 25 // ★ 요일 헤더 높이 25
   FACTORY_WEEKDAY_HEADERS.forEach((day, idx) => {
-    const cell = headerRow.getCell(idx + 1)
+    const cell = dayHeaderRow.getCell(idx + 1)
     cell.value = day
     cell.font = { bold: true }
     cell.alignment = { horizontal: 'center', vertical: 'middle' }
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E0E0' } }
-    cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
+    
+    // ★ 색상 로직: 평일=회색, 토=연파랑, 일=연분홍
+    if (idx === 0) { // 일요일
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD9D9' } }
+    } else if (idx === 6) { // 토요일
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E8FF' } }
+    } else { // 평일
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E8E8' } }
+    }
   })
-  headerRow.getCell(8).value = '주차평균'
-  headerRow.getCell(8).font = { bold: true }
-  headerRow.getCell(8).alignment = { horizontal: 'center', vertical: 'middle' }
-  headerRow.height = 20
   rowNum++
 
-  const weeklyTotals: { sum: number; count: number }[] = []
-
-  // 주차별 블록 생성
-  for (let weekIdx = 0; weekIdx < weeks.length; weekIdx++) {
-    const weekDates = weeks[weekIdx]
-    let weekSum = 0
-    let weekCount = 0
+  // 주차별 6행 블록 생성
+  for (const weekDates of weeks) {
     const blockStartRow = rowNum
+    const BLOCK_ROWS = 6 // 생산일 + 메뉴1~4 + 원가합계
 
-    // 행 구조: 생산일 | FF | FF단가 | 음료 | 음료단가 | 디저트1 | 디저트1단가 | 디저트2 | 디저트2단가 | 합계
-    // 간소화: 생산일/배송일 | FF(단가) | 음료(단가) | 디저트(단가) | 합계 → 5행 고정
-    const ROW_LABELS = ['생산/배송', 'FF', '음료', '디저트', '합계']
-    
-    for (let r = 0; r < ROW_LABELS.length; r++) {
-      const row = worksheet.getRow(rowNum + r)
-      row.height = 18
+    // ★ 각 행 높이 18 고정
+    for (let r = 0; r < BLOCK_ROWS; r++) {
+      worksheet.getRow(rowNum + r).height = 18
     }
 
     for (const date of weekDates) {
       const colIdx = date.getDay() + 1 // 일요일=0 → 1열
 
+      // D-1 생산일 계산
       const productionDate = new Date(date)
       productionDate.setDate(productionDate.getDate() - 1)
 
@@ -681,84 +682,86 @@ function buildFactoryCalendarSheetExcelJS(
       const meal = mealPlanMeals[planName]?.find(m => m.date === dateStr)
       const comp = meal?.compositions[pricePoint]
 
-      // 행0: 생산/배송일
+      // ★ 행1: 생산 날짜만 (고객수령일 삭제)
       const cell0 = worksheet.getCell(rowNum, colIdx)
-      cell0.value = `${formatDateShort(productionDate)}\n(${formatDateShort(date)})`
-      cell0.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
-      applyDayColor(cell0, date)
+      cell0.value = `${productionDate.getMonth() + 1}/${productionDate.getDate()}`
+      cell0.alignment = { horizontal: 'center', vertical: 'middle' }
+      
+      // ★ 날짜 셀 색상 쉐이딩
+      const dayOfWeek = date.getDay()
+      const isHoliday = isKRHoliday(productionDate)
+      if (isHoliday || dayOfWeek === 0) {
+        cell0.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD9D9' } }
+      } else if (dayOfWeek === 6) {
+        cell0.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E8FF' } }
+      }
 
       if (comp) {
-        // 행1: FF + 단가
+        // ★ 행2: FF 메뉴명만 (단가 제거)
         const cell1 = worksheet.getCell(rowNum + 1, colIdx)
-        cell1.value = comp.ff ? `${comp.ff.name}\n(${comp.ff.cost}원)` : '-'
-        cell1.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+        cell1.value = comp.ff?.name ?? '-'
+        cell1.alignment = { horizontal: 'center', vertical: 'middle' }
 
-        // 행2: 음료 + 단가
+        // ★ 행3: 음료 메뉴명만 (단가 제거)
         const cell2 = worksheet.getCell(rowNum + 2, colIdx)
-        cell2.value = comp.drink ? `${comp.drink.name}\n(${comp.drink.cost}원)` : '-'
-        cell2.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+        cell2.value = comp.drink?.name ?? '-'
+        cell2.alignment = { horizontal: 'center', vertical: 'middle' }
 
-        // 행3: 디저트 + 단가
+        // ★ 행4~5: 디저트 메뉴명만 (단가 제거)
+        const desserts = comp.desserts ?? []
         const cell3 = worksheet.getCell(rowNum + 3, colIdx)
-        if (comp.desserts.length > 0) {
-          const dessertText = comp.desserts.map(d => `${d.name}(${d.cost})`).join('\n')
-          cell3.value = dessertText
-        } else {
-          cell3.value = '-'
-        }
-        cell3.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+        cell3.value = desserts[0]?.name ?? '-'
+        cell3.alignment = { horizontal: 'center', vertical: 'middle' }
 
-        // 행4: 합계
         const cell4 = worksheet.getCell(rowNum + 4, colIdx)
-        const isOver = comp.totalCost > targetCost * 1.03
-        cell4.value = `${comp.totalCost}원`
+        cell4.value = desserts[1]?.name ?? '-'
         cell4.alignment = { horizontal: 'center', vertical: 'middle' }
-        cell4.font = { bold: true, color: isOver ? { argb: 'FFFF0000' } : undefined }
-        if (isOver) {
-          cell4.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFCCCC' } }
-        }
 
-        weekSum += comp.totalCost
-        weekCount++
+        // ★ 행6: 원가 합계 (숫자만, '원' 제거, 우측 정렬)
+        const cell5 = worksheet.getCell(rowNum + 5, colIdx)
+        cell5.value = comp.totalCost
+        cell5.alignment = { horizontal: 'right', vertical: 'middle' }
+        cell5.font = { bold: true }
       }
     }
 
-    // 주차 평균 (8열)
-    const weekAvg = weekCount > 0 ? Math.round(weekSum / weekCount) : 0
-    weeklyTotals.push({ sum: weekSum, count: weekCount })
-    
-    const avgCell = worksheet.getCell(rowNum + 2, 8)
-    avgCell.value = `${weekIdx + 1}주차\n평균: ${weekAvg}원`
-    avgCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
-    avgCell.font = { bold: true }
+    // ★ 블록 외곽 테두리만 (내부 격자선 제거)
+    applyBlockBorderOutlineOnly(worksheet, blockStartRow, rowNum + BLOCK_ROWS - 1, 1, 7)
 
-    // 블록 외곽 테두리
-    applyBlockBorder(worksheet, blockStartRow, rowNum + 4, 1, 7)
-
-    rowNum += 6 // 5행 + 1빈행
+    rowNum += BLOCK_ROWS // 6행 블록 (빈행 없음)
   }
 
-  // 총괄 요약
-  const totalSum = weeklyTotals.reduce((s, w) => s + w.sum, 0)
-  const totalCount = weeklyTotals.reduce((s, w) => s + w.count, 0)
-  const totalAvg = totalCount > 0 ? Math.round(totalSum / totalCount) : 0
-  const diff = totalAvg - targetCost
+  // ★ 총괄 요약 삭제 (보안상 원가 정보 제거)
 
-  rowNum++
-  worksheet.getCell(rowNum, 1).value = '[총괄 요약]'
-  worksheet.getCell(rowNum, 1).font = { bold: true }
-  rowNum++
-  worksheet.getCell(rowNum, 1).value = `운영일수: ${totalCount}일`
-  worksheet.getCell(rowNum, 2).value = `목표원가: ${targetCost}원`
-  worksheet.getCell(rowNum, 3).value = `평균원가: ${totalAvg}원`
-  worksheet.getCell(rowNum, 4).value = `차이: ${diff >= 0 ? '+' : ''}${diff}원`
-  worksheet.getCell(rowNum, 4).font = { color: diff > 0 ? { argb: 'FFFF0000' } : { argb: 'FF008800' } }
-
-  // Clean Canvas View 적용
-  applyCleanCanvasView(worksheet, 8)
+  // ★ Clean Canvas View 적용 (H열 이후 + 마지막 행 이후 숨김)
+  applyCleanCanvasView(worksheet, 7)
 }
 
-// 블록 외곽 테두리 적용
+// 블록 외곽 테두리만 적용 (내부 격자선 없음) - 공장용
+function applyBlockBorderOutlineOnly(
+  worksheet: ExcelJS.Worksheet,
+  startRow: number,
+  endRow: number,
+  startCol: number,
+  endCol: number
+) {
+  for (let r = startRow; r <= endRow; r++) {
+    for (let c = startCol; c <= endCol; c++) {
+      const cell = worksheet.getCell(r, c)
+      const border: Partial<ExcelJS.Borders> = {}
+      
+      // ★ 외곽만 굵은 테두리, 내부 격자선 없음
+      if (r === startRow) border.top = { style: 'medium' }
+      if (r === endRow) border.bottom = { style: 'medium' }
+      if (c === startCol) border.left = { style: 'medium' }
+      if (c === endCol) border.right = { style: 'medium' }
+      
+      cell.border = border
+    }
+  }
+}
+
+// 블록 외곽 + 내부 얇은 테두리 - 고객용/도시락용
 function applyBlockBorder(
   worksheet: ExcelJS.Worksheet,
   startRow: number,
