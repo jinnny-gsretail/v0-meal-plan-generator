@@ -308,6 +308,28 @@ function buildCustomerCalendarSheet(
       cell.value = { richText }
     }
   }
+
+  // ★ Clean Canvas View 적용
+  applyCleanCanvasView(worksheet, 7)
+}
+
+// Clean Canvas View 헬퍼 함수: 데이터 영역 외 숨김 + 눈금선 제거
+function applyCleanCanvasView(worksheet: ExcelJS.Worksheet, usedColumns: number) {
+  // 눈금선 제거
+  worksheet.views = [{ showGridLines: false }]
+
+  // 사용하지 않는 열 숨김 (H열부터 = 8열부터)
+  for (let col = usedColumns + 1; col <= 100; col++) {
+    const column = worksheet.getColumn(col)
+    column.hidden = true
+  }
+
+  // 사용하지 않는 행 숨김 (마지막 데이터 행 이후)
+  const lastRow = worksheet.lastRow?.number ?? 1
+  for (let row = lastRow + 1; row <= lastRow + 100; row++) {
+    const r = worksheet.getRow(row)
+    r.hidden = true
+  }
 }
 
 // 도시락 고객용 시트 (ExcelJS)
@@ -366,6 +388,9 @@ function buildDosirakCustomerSheet(
       cell.alignment = { horizontal: 'center', vertical: 'middle' }
     })
   }
+
+  // ★ Clean Canvas View 적용
+  applyCleanCanvasView(worksheet, 4)
 }
 
 // 프리포맷 고객용 시트 (ExcelJS)
@@ -472,6 +497,9 @@ function buildFreeFormatCustomerSheet(
       cell.value = { richText }
     }
   }
+
+  // ★ Clean Canvas View 적용
+  applyCleanCanvasView(worksheet, 7)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -490,10 +518,39 @@ function applyRowHeights(ws: XLSX.WorkSheet, heights: { [row: number]: number })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 공장용 식단표 다운로드 (SheetJS - 기존 유지)
+// 공장용 식단표 다운로드 (ExcelJS - Clean Canvas View + 블록 테두리)
+// - 일요일 시작 캘린더
+// - 1메뉴 1셀 분할 구조, 행 높이 18 고정
+// - 블록 외곽 테두리만 강조
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function downloadFactoryExcel(
+const FACTORY_WEEKDAY_HEADERS = ['일', '월', '화', '수', '목', '금', '토']
+
+// 주차별로 날짜 그룹화 (일요일 시작 기준 - 공장용)
+function groupByWeekSunday(dates: Date[]): Date[][] {
+  if (dates.length === 0) return []
+  
+  const weeks: Date[][] = []
+  let currentWeek: Date[] = []
+  
+  for (const date of dates) {
+    const dayOfWeek = date.getDay()
+    // 일요일(0)이면 새 주 시작
+    if (dayOfWeek === 0 && currentWeek.length > 0) {
+      weeks.push(currentWeek)
+      currentWeek = []
+    }
+    currentWeek.push(date)
+  }
+  
+  if (currentWeek.length > 0) {
+    weeks.push(currentWeek)
+  }
+  
+  return weeks
+}
+
+export async function downloadFactoryExcel(
   mealPlanMeals: MealPlanDailyMeals,
   mealPlanTargetCosts: MealPlanTargetCosts,
   startDate: Date,
@@ -501,38 +558,46 @@ export function downloadFactoryExcel(
   dosirakSets?: DosirakSets,
   freeFormatData?: FreeFormatData
 ) {
-  const wb = XLSX.utils.book_new()
+  const workbook = new ExcelJS.Workbook()
+  workbook.creator = '밀박스25'
+  workbook.created = new Date()
 
-  const mealGroups = [
-    { label: '가)김밥_공장', plans: ['김밥3.5', '김밥4.5', '김밥5.5'] },
-    { label: '가-1)김밥(음X)_공장', plans: ['김밥3.5(음X)'] },
-    { label: '나)삼각_공장', plans: ['삼각3.5', '삼각4.5'] },
-    { label: '나-1)삼각(음X)_공장', plans: ['삼각3.5(음X)'] },
-    { label: '다)샌드_공장', plans: ['샌드3.5', '샌드4.5', '샌드5.5'] },
-    { label: '다-1)샌드(음X)_공장', plans: ['샌드3.5(음X)'] },
-    { label: '라)버거_공장', plans: ['버거3.5', '버거4.5', '버거5.5'] },
-    { label: '바)공장박스_공장', plans: ['공장박스'] },
+  // 식단별 개별 시트 생성
+  const allPlans = [
+    '김밥3.5', '김밥4.5', '김밥5.5',
+    '김밥3.5(음X)',
+    '삼각3.5', '삼각4.5',
+    '삼각3.5(음X)',
+    '샌드3.5', '샌드4.5', '샌드5.5',
+    '샌드3.5(음X)',
+    '버거3.5', '버거4.5', '버거5.5',
+    '공장박스'
   ]
 
-  for (const group of mealGroups) {
-    const ws = buildFactoryCalendarSheet(group.plans, mealPlanMeals, mealPlanTargetCosts, startDate, endDate)
-    XLSX.utils.book_append_sheet(wb, ws, group.label)
+  for (const planName of allPlans) {
+    if (mealPlanMeals[planName] && mealPlanMeals[planName].length > 0) {
+      buildFactoryCalendarSheetExcelJS(workbook, planName, mealPlanMeals, mealPlanTargetCosts, startDate, endDate)
+    }
   }
   
   // 도시락 시트
   if (dosirakSets && Object.keys(dosirakSets).length > 0) {
-    const dosirakWs = buildDosirakFactorySheet(dosirakSets, mealPlanTargetCosts)
-    XLSX.utils.book_append_sheet(wb, dosirakWs, '마)도시락_공장')
+    buildDosirakFactorySheetExcelJS(workbook, dosirakSets, mealPlanTargetCosts)
   }
 
   // 프리포맷 시트
   if (freeFormatData && Object.keys(freeFormatData).length > 0) {
-    const freeWs = buildFreeFormatFactorySheet(freeFormatData, startDate, endDate)
-    XLSX.utils.book_append_sheet(wb, freeWs, '사)프리포맷_공장')
+    buildFreeFormatFactorySheetExcelJS(workbook, freeFormatData, startDate, endDate)
   }
 
-  const month = `${startDate.getFullYear()}년${String(startDate.getMonth() + 1).padStart(2, '0')}월`
-  XLSX.writeFile(wb, `밀박스25_공장식단표_${month}.xlsx`)
+  // 파일명: [공장용]_식단표_YYYYMMDD_YYYYMMDD.xlsx
+  const startStr = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`
+  const endStr = `${endDate.getFullYear()}${String(endDate.getMonth() + 1).padStart(2, '0')}${String(endDate.getDate()).padStart(2, '0')}`
+  const fileName = `[공장용]_식단표_${startStr}_${endStr}.xlsx`
+
+  const buffer = await workbook.xlsx.writeBuffer()
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  saveAs(blob, fileName)
 }
 
 // 공장용 캘린더 시트 (7열 그리드 + 원가 + 주차별 평균)
