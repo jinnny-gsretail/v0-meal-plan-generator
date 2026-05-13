@@ -672,28 +672,29 @@ function buildFactoryCalendarSheetExcelJS(
     }
 
     for (const date of weekDates) {
-      const colIdx = date.getDay() + 1 // 일요일=0 → 1열
-
       // D-1 생산일 계산
       const productionDate = new Date(date)
       productionDate.setDate(productionDate.getDate() - 1)
+
+      // ★ 생산일 기준으로 요일 열 배치 (수정됨)
+      const colIdx = productionDate.getDay() + 1 // 일요일=0 → 1열
 
       const dateStr = toDateStr(date)
       const meal = mealPlanMeals[planName]?.find(m => m.date === dateStr)
       const comp = meal?.compositions[pricePoint]
 
-      // ★ 행1: 생산 날짜만 (고객수령일 삭제)
+      // ★ 행1: 생산 날짜만
       const cell0 = worksheet.getCell(rowNum, colIdx)
       cell0.value = `${productionDate.getMonth() + 1}/${productionDate.getDate()}`
       cell0.alignment = { horizontal: 'center', vertical: 'middle' }
       
-      // ★ 날짜 셀 색상 쉐이딩
-      const dayOfWeek = date.getDay()
+      // ★ 주말/공휴일: 셀 쉐이딩 대신 글자 색상 변경
+      const prodDayOfWeek = productionDate.getDay()
       const isHoliday = isKRHoliday(productionDate)
-      if (isHoliday || dayOfWeek === 0) {
-        cell0.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFD9D9' } }
-      } else if (dayOfWeek === 6) {
-        cell0.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E8FF' } }
+      if (isHoliday || prodDayOfWeek === 0) {
+        cell0.font = { color: { argb: 'FFFF0000' } } // 일요일/공휴일: 빨간 글씨
+      } else if (prodDayOfWeek === 6) {
+        cell0.font = { color: { argb: 'FF0000FF' } } // 토요일: 파란 글씨
       }
 
       if (comp) {
