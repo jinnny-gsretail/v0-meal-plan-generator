@@ -34,6 +34,13 @@ const DRINK_COLOR = { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-
 
 const getDefaultDessertColor = () => ({ bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300' })
 
+// 상품명에서 괄호 및 내부 텍스트 제거 (원가, 태그 등)
+const cleanProductName = (name: string): string => {
+  if (!name) return ''
+  // 괄호와 괄호 안의 내용 제거: "상품명(원가)" → "상품명"
+  return name.replace(/\s*\([^)]*\)\s*/g, '').trim()
+}
+
 export function MealCalendar() {
   const { 
     selectedMonth: storedMonth, 
@@ -115,6 +122,10 @@ export function MealCalendar() {
   // 프리포맷: 드래그 출발 날짜
   const freeDragRef = useRef<string | null>(null)
   const [freeDragOver, setFreeDragOver] = useState<string | null>(null)
+  
+  // 프리포맷: 기존 식단 불러오기 다이얼로그 상태
+  const [showLoadMealDialog, setShowLoadMealDialog] = useState(false)
+  const [loadMealConfirm, setLoadMealConfirm] = useState(false)
   
   // Ensure dates are Date objects
   const startDate = storedStartDate instanceof Date ? storedStartDate : storedStartDate ? new Date(storedStartDate) : null
@@ -394,6 +405,62 @@ export function MealCalendar() {
     setShowLoadDialog(false)
   }
   
+  // 프리포맷: 기존 식단 불러오기 핸들러
+  const loadMealToFreeFormat = (mealPlanName: string) => {
+    const meals = mealPlanMeals[mealPlanName]
+    if (!meals || meals.length === 0) return
+
+    const planInfo = ALL_MEAL_PLANS.find(m => m.name === mealPlanName)
+    const pricePoint = planInfo?.price ?? 3500
+
+    // 기존 프리포맷 데이터 모두 삭제
+    Object.keys(freeFormatData).forEach(date => {
+      clearFreeDay(date)
+    })
+
+    // 선택한 식단의 메뉴를 프리포맷에 주입 (4슬롯: FF + 음료 + 디저트1 + 디저트2)
+    meals.forEach(meal => {
+      const comp = meal.compositions[pricePoint]
+      if (!comp) return
+
+      const slots: Array<{ id: string; product?: Product; customText?: string; cost: number }> = []
+
+      // FF
+      if (comp.ff) {
+        slots.push({
+          id: Math.random().toString(36).substring(2, 9),
+          product: comp.ff,
+          cost: comp.ff.cost,
+        })
+      }
+
+      // 음료
+      if (comp.drink) {
+        slots.push({
+          id: Math.random().toString(36).substring(2, 9),
+          product: comp.drink,
+          cost: comp.drink.cost,
+        })
+      }
+
+      // 디저트들
+      comp.desserts.forEach(d => {
+        slots.push({
+          id: Math.random().toString(36).substring(2, 9),
+          product: d,
+          cost: d.cost,
+        })
+      })
+
+      // 각 슬롯을 프리포맷에 설정
+      slots.forEach((slot, idx) => {
+        if (idx < 4) { // 최대 4개 슬롯
+          setFreeSlot(meal.date, idx, slot)
+        }
+      })
+    })
+  }
+
   // 도시락 조합 수정 핸들러
   const handleEditDosirakComponent = (
     pricePoint: number,
@@ -585,9 +652,17 @@ export function MealCalendar() {
               </div>
               <div className="text-center">
                 <h2 className="text-base font-semibold text-foreground">{year}년 {month + 1}월</h2>
-                <p className="text-[10px] text-muted-foreground mt-0.5">셀 클릭으로 슬롯 추가 · 드래그로 날짜간 복사/이동</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">6행 고정 블록 · 기존 식단 불러오기 가능</p>
               </div>
-              <div className="w-16" />
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1 text-xs"
+                onClick={() => setShowLoadMealDialog(true)}
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+                기존 식단 불러오기
+              </Button>
             </div>
             {/* 요일 헤더 */}
             <div className="grid grid-cols-7 border-b border-border">
@@ -623,10 +698,13 @@ export function MealCalendar() {
 
                 const isDragOver = freeDragOver === displayDateStr
 
+                // 6행 고정: 생산일 + 메뉴1~4 + 원가합계
+                const fixedSlots = [0, 1, 2, 3].map(i => slots[i] ?? null)
+
                 return (
                   <div
                     key={idx}
-                    className={`min-h-28 p-1 border-r border-b border-border last:border-r-0 transition-colors
+                    className={`p-1 border-r border-b border-border last:border-r-0 transition-colors
                       ${!dateInfo.isCurrentMonth ? 'bg-secondary/20 opacity-50' : ''}
                       ${inRange ? 'hover:bg-secondary/20' : 'opacity-30'}
                       ${idx % 7 === 0 && inRange ? 'bg-red-50/30' : ''}
@@ -645,69 +723,54 @@ export function MealCalendar() {
                       freeDragRef.current = null
                     }}
                   >
-                    {/* 날짜 숫자 + 총원가 */}
-                    <div className="flex items-start justify-between mb-0.5">
-                      <span className={`text-xs font-medium ${
+                    {/* ★ 6행 고정 블록 구조 */}
+                    <div className="flex flex-col h-full" style={{ minHeight: '140px' }}>
+                      {/* 행1: 생산 날짜 (가운데 정렬) */}
+                      <div className={`h-5 flex items-center justify-center text-xs font-semibold border-b border-border/50 ${
                         !dateInfo.isCurrentMonth ? 'text-muted-foreground/40'
                           : idx % 7 === 0 ? 'text-destructive' : idx % 7 === 6 ? 'text-primary' : 'text-foreground'
-                      }`}>{dateInfo.day}</span>
-                      {inRange && totalCost > 0 && (
-                        <span className="text-[8px] text-muted-foreground leading-tight">{totalCost.toLocaleString()}원</span>
+                      }`}>
+                        {viewMode === 'factory' ? `${currentDate.getMonth() + 1}/${currentDate.getDate()}` : dateInfo.day}
+                      </div>
+
+                      {/* 행2~5: 메뉴 슬롯 (4개 고정) */}
+                      {inRange ? (
+                        <>
+                          {fixedSlots.map((slot, si) => (
+                            <div
+                              key={si}
+                              className={`h-5 flex items-center justify-center text-[9px] leading-tight cursor-pointer border-b border-border/30 ${
+                                slot ? 'bg-secondary/50 hover:bg-secondary text-foreground' : 'bg-transparent hover:bg-secondary/30 text-muted-foreground/40'
+                              }`}
+                              onClick={() => {
+                                if (slot) {
+                                  setFreeEditState({ date: displayDateStr, slotIndex: si, mode: slot.customText ? 'text' : 'product', currentText: slot.customText })
+                                  setFreeCustomText(slot.customText ?? '')
+                                } else {
+                                  setFreeEditState({ date: displayDateStr, slotIndex: si, mode: 'product' })
+                                  setFreeCustomText('')
+                                }
+                              }}
+                            >
+                              {slot ? (
+                                <span className="truncate px-1 max-w-full">
+                                  {cleanProductName(slot.customText ?? slot.product?.name ?? '')}
+                                </span>
+                              ) : (
+                                <span className="text-[8px]">+ 메뉴 {si + 1}</span>
+                              )}
+                            </div>
+                          ))}
+
+                          {/* 행6: 원가 합계 (우측 정렬, 숫자만) */}
+                          <div className="h-5 flex items-center justify-end pr-1 text-[10px] font-semibold text-foreground">
+                            {totalCost > 0 ? totalCost.toLocaleString() : '-'}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex-1" />
                       )}
                     </div>
-
-                    {inRange && (
-                      <div className="space-y-0.5">
-                        {/* 기존 슬롯 */}
-                        {slots.map((slot, si) => (
-                          <div
-                            key={slot.id}
-                            className="group flex items-center gap-0.5 px-0.5 py-px rounded bg-secondary/70 hover:bg-secondary cursor-pointer"
-                            onClick={() => {
-                              setFreeEditState({ date: displayDateStr, slotIndex: si, mode: slot.customText ? 'text' : 'product', currentText: slot.customText })
-                              setFreeCustomText(slot.customText ?? '')
-                            }}
-                          >
-                            <GripVertical className="w-2 h-2 text-muted-foreground/40 shrink-0" />
-                            <span className="text-[9px] text-foreground truncate flex-1 leading-tight">
-                              {slot.customText ?? slot.product?.name ?? ''}
-                            </span>
-                            <button
-                              className="opacity-0 group-hover:opacity-100 shrink-0"
-                              onClick={(e) => { e.stopPropagation(); setFreeSlot(displayDateStr, si, null) }}
-                            >
-                              <X className="w-2 h-2 text-muted-foreground" />
-                            </button>
-                          </div>
-                        ))}
-
-                        {/* 슬롯 추가 버튼 (최대 5개) */}
-                        {slots.length < 5 && (
-                          <button
-                            className="w-full flex items-center justify-center gap-0.5 px-0.5 py-px rounded border border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors"
-                            onClick={() => {
-                              setFreeEditState({ date: displayDateStr, slotIndex: slots.length, mode: 'product' })
-                              setFreeCustomText('')
-                            }}
-                          >
-                            <Plus className="w-2.5 h-2.5 text-muted-foreground" />
-                          </button>
-                        )}
-
-                        {/* 드래그 핸들 (셀 우상단, hover 시 노출) */}
-                        {slots.length > 0 && (
-                          <div
-                            draggable
-                            onDragStart={() => { freeDragRef.current = displayDateStr }}
-                            onDragEnd={() => { freeDragRef.current = null; setFreeDragOver(null) }}
-                            className="flex items-center justify-end mt-0.5 cursor-grab active:cursor-grabbing opacity-0 hover:opacity-100 group-hover:opacity-100"
-                            title="드래그: 복사 | Shift+드래그: 이동"
-                          >
-                            <Copy className="w-2.5 h-2.5 text-muted-foreground/60" />
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                 )
               })}
@@ -1619,7 +1682,91 @@ export function MealCalendar() {
         </Dialog>
       )}
 
-      {/* 식단 저장 다��얼로그 */}
+      {/* 프리포맷: 기존 식단 불러오기 다이얼로그 */}
+      {showLoadMealDialog && (
+        <Dialog open={showLoadMealDialog} onOpenChange={(open) => { setShowLoadMealDialog(open); setLoadMealConfirm(false) }}>
+          <DialogContent className="max-w-lg bg-card">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">기존 식단 불러오기</DialogTitle>
+              <DialogDescription className="text-muted-foreground text-sm">
+                기존에 생성된 식단을 선택하면 해당 메뉴 구성이 프리포맷에 자동으로 적용됩니다.
+              </DialogDescription>
+            </DialogHeader>
+
+            {!loadMealConfirm ? (
+              <ScrollArea className="max-h-80">
+                <div className="grid grid-cols-2 gap-2 pr-2">
+                  {Object.keys(mealPlanMeals)
+                    .filter(name => name !== '프리포맷' && mealPlanMeals[name]?.length > 0)
+                    .map(mealPlanName => {
+                      const planInfo = ALL_MEAL_PLANS.find(m => m.name === mealPlanName)
+                      const mealCount = mealPlanMeals[mealPlanName]?.length ?? 0
+                      return (
+                        <button
+                          key={mealPlanName}
+                          className="p-3 rounded-lg border border-border hover:border-primary hover:bg-primary/5 text-left transition-colors"
+                          onClick={() => {
+                            // 기존 데이터가 있으면 확인 요청
+                            const hasExistingData = Object.keys(freeFormatData).some(d => 
+                              freeFormatData[d]?.slots?.length > 0
+                            )
+                            if (hasExistingData) {
+                              setLoadMealConfirm(true)
+                              // 임시로 선택한 식단 저장
+                              ;(window as any).__pendingLoadMeal = mealPlanName
+                            } else {
+                              loadMealToFreeFormat(mealPlanName)
+                              setShowLoadMealDialog(false)
+                            }
+                          }}
+                        >
+                          <div className="font-medium text-foreground text-sm">{mealPlanName}</div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {mealCount}일 구성 · {planInfo?.price ? `${(planInfo.price / 1000).toFixed(1)}천원` : ''}
+                          </div>
+                        </button>
+                      )
+                    })}
+                </div>
+              </ScrollArea>
+            ) : (
+              <div className="space-y-4">
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-sm text-amber-800 font-medium">기존 식단이 덮어씌워집니다</p>
+                  <p className="text-xs text-amber-700 mt-1">
+                    현재 프리포맷에 작성된 내용이 모두 삭제되고 선택한 식단으로 대체됩니다.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setLoadMealConfirm(false)}
+                  >
+                    취소
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    onClick={() => {
+                      const pendingMeal = (window as any).__pendingLoadMeal
+                      if (pendingMeal) {
+                        loadMealToFreeFormat(pendingMeal)
+                        delete (window as any).__pendingLoadMeal
+                      }
+                      setShowLoadMealDialog(false)
+                      setLoadMealConfirm(false)
+                    }}
+                  >
+                    확인, 불러오기
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* 식단 저장 다이얼로그 */}
       <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
         <DialogContent className="max-w-md bg-card">
           <DialogHeader>
