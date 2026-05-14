@@ -386,7 +386,7 @@ export function MealCalendar() {
     currentProduct: Product | null
   ) => {
     if (!selectedMealPlan) return
-    setCupRamenOverride(false) // 다이얼로그 열 때마다 override 리셋
+    setCupRamenOverride(false) // 다이���로그 열 때마다 override 리셋
     setPendingProduct(null) // 선택 상태 초기화
     setEditingComponent({ date, mealPlanName: selectedMealPlan, componentType, componentIndex, currentProduct })
   }
@@ -654,15 +654,32 @@ export function MealCalendar() {
                 <h2 className="text-base font-semibold text-foreground">{year}년 {month + 1}월</h2>
                 <p className="text-[10px] text-muted-foreground mt-0.5">6행 고정 블록 · 기존 식단 불러오기 가능</p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1 text-xs"
-                onClick={() => setShowLoadMealDialog(true)}
-              >
-                <FolderOpen className="w-3.5 h-3.5" />
-                기존 식단 불러오기
-              </Button>
+              <div className="flex gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => {
+                    if (Object.keys(freeFormatData).some(d => freeFormatData[d]?.slots?.length > 0)) {
+                      if (confirm('모든 프리포맷 구성을 삭제하시겠습니까?')) {
+                        Object.keys(freeFormatData).forEach(date => clearFreeDay(date))
+                      }
+                    }
+                  }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  모두 삭제
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1 text-xs"
+                  onClick={() => setShowLoadMealDialog(true)}
+                >
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  기존 식단 불러오기
+                </Button>
+              </div>
             </div>
             {/* 요일 헤더 */}
             <div className="grid grid-cols-7 border-b border-border">
@@ -1347,7 +1364,7 @@ export function MealCalendar() {
                   <p className="text-xs text-primary">월요일: 요거트 필수 규칙이 적용됩니다.</p>
                 )}
                 {isFF && (
-                  <p className="text-xs text-muted-foreground">원가 제한 없이 자유롭게 선택할 수 있습니다. 주 2회 초과 시 경고가 표시됩니다.</p>
+                  <p className="text-xs text-muted-foreground">원가 제한 없이 ��유롭게 선택할 수 있습니다. 주 2회 초과 시 경고가 표시됩니다.</p>
                 )}
               </div>
 
@@ -1602,16 +1619,29 @@ export function MealCalendar() {
               </DialogDescription>
             </DialogHeader>
 
-            {/* 모드 탭 */}
-            <div className="flex gap-1 p-1 bg-secondary rounded-lg">
-              <button
-                className={`flex-1 py-1.5 text-xs rounded transition-colors ${freeEditState.mode === 'product' ? 'bg-card shadow-sm text-foreground font-medium' : 'text-muted-foreground'}`}
-                onClick={() => setFreeEditState(s => s ? { ...s, mode: 'product' } : s)}
-              >상품 선택</button>
-              <button
-                className={`flex-1 py-1.5 text-xs rounded transition-colors ${freeEditState.mode === 'text' ? 'bg-card shadow-sm text-foreground font-medium' : 'text-muted-foreground'}`}
-                onClick={() => setFreeEditState(s => s ? { ...s, mode: 'text' } : s)}
-              >텍스트 직접 입력</button>
+            {/* 모드 탭 + 삭제 버튼 */}
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1 p-1 bg-secondary rounded-lg flex-1">
+                <button
+                  className={`flex-1 py-1.5 text-xs rounded transition-colors ${freeEditState.mode === 'product' ? 'bg-card shadow-sm text-foreground font-medium' : 'text-muted-foreground'}`}
+                  onClick={() => setFreeEditState(s => s ? { ...s, mode: 'product' } : s)}
+                >상품 선택</button>
+                <button
+                  className={`flex-1 py-1.5 text-xs rounded transition-colors ${freeEditState.mode === 'text' ? 'bg-card shadow-sm text-foreground font-medium' : 'text-muted-foreground'}`}
+                  onClick={() => setFreeEditState(s => s ? { ...s, mode: 'text' } : s)}
+                >텍스트 직접 입력</button>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10 px-2"
+                onClick={() => {
+                  setFreeSlot(freeEditState.date, freeEditState.slotIndex, null)
+                  setFreeEditState(null)
+                }}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
             </div>
 
             {freeEditState.mode === 'text' ? (
