@@ -550,6 +550,35 @@ function groupByWeekSunday(dates: Date[]): Date[][] {
   return weeks
 }
 
+// ★ 생산일 기준 주차 그룹핑 (공장용 - 생산일이 같은 주에 배치되도록)
+interface ProductionDatePair {
+  deliveryDate: Date
+  productionDate: Date
+}
+
+function groupByWeekSundayWithProduction(pairs: ProductionDatePair[]): ProductionDatePair[][] {
+  if (pairs.length === 0) return []
+  
+  const weeks: ProductionDatePair[][] = []
+  let currentWeek: ProductionDatePair[] = []
+  
+  for (const pair of pairs) {
+    const prodDayOfWeek = pair.productionDate.getDay()
+    // 생산일이 일요일(0)이면 새 주 시작
+    if (prodDayOfWeek === 0 && currentWeek.length > 0) {
+      weeks.push(currentWeek)
+      currentWeek = []
+    }
+    currentWeek.push(pair)
+  }
+  
+  if (currentWeek.length > 0) {
+    weeks.push(currentWeek)
+  }
+  
+  return weeks
+}
+
 export async function downloadFactoryExcel(
   mealPlanMeals: MealPlanDailyMeals,
   mealPlanTargetCosts: MealPlanTargetCosts,
@@ -620,7 +649,14 @@ function buildFactoryCalendarSheetExcelJS(
   const worksheet = workbook.addWorksheet(safeSheetName)
   
   const dates = getDatesInRange(startDate, endDate)
-  const weeks = groupByWeekSunday(dates)
+  
+  // ★ 생산일(D-1) 기준으로 주차 그룹핑 (배송일이 아닌 생산일 기준)
+  const productionDates = dates.map(d => {
+    const prod = new Date(d)
+    prod.setDate(prod.getDate() - 1)
+    return { deliveryDate: d, productionDate: prod }
+  })
+  const weeks = groupByWeekSundayWithProduction(productionDates)
   
   const planInfo = ALL_MEAL_PLANS.find(m => m.name === planName)
   const pricePoint = planInfo?.price ?? 3500
@@ -661,8 +697,8 @@ function buildFactoryCalendarSheetExcelJS(
   })
   rowNum++
 
-  // 주차별 6행 블록 생성
-  for (const weekDates of weeks) {
+  // 주차별 6행 블록 생성 (생산일 기준으로 그룹핑됨)
+  for (const weekPairs of weeks) {
     const blockStartRow = rowNum
     const BLOCK_ROWS = 6 // 생산일 + 메뉴1~4 + 원가합계
 
@@ -671,15 +707,11 @@ function buildFactoryCalendarSheetExcelJS(
       worksheet.getRow(rowNum + r).height = 18
     }
 
-    for (const date of weekDates) {
-      // D-1 생산일 계산
-      const productionDate = new Date(date)
-      productionDate.setDate(productionDate.getDate() - 1)
-
-      // ★ 생산일 기준으로 요일 열 배치 (수정됨)
+    for (const { deliveryDate, productionDate } of weekPairs) {
+      // ★ 생산일 기준으로 요일 열 배치
       const colIdx = productionDate.getDay() + 1 // 일요일=0 → 1열
 
-      const dateStr = toDateStr(date)
+      const dateStr = toDateStr(deliveryDate)
       const meal = mealPlanMeals[planName]?.find(m => m.date === dateStr)
       const comp = meal?.compositions[pricePoint]
 
@@ -922,7 +954,14 @@ function buildFreeFormatFactorySheetExcelJS(
 ) {
   const worksheet = workbook.addWorksheet('프리포맷')
   const dates = getDatesInRange(startDate, endDate)
-  const weeks = groupByWeekSunday(dates)
+  
+  // ★ 생산일(D-1) 기준으로 주차 그룹핑
+  const productionDates = dates.map(d => {
+    const prod = new Date(d)
+    prod.setDate(prod.getDate() - 1)
+    return { deliveryDate: d, productionDate: prod }
+  })
+  const weeks = groupByWeekSundayWithProduction(productionDates)
 
   // ★ 열 너비: A~G = 35 고정 (다른 식단과 동일)
   for (let col = 1; col <= 7; col++) {
@@ -959,8 +998,8 @@ function buildFreeFormatFactorySheetExcelJS(
   })
   rowNum++
 
-  // 주차별 6행 고정 블록 생성
-  for (const weekDates of weeks) {
+  // 주차별 6행 고정 블록 생성 (생산일 기준으로 그룹핑됨)
+  for (const weekPairs of weeks) {
     const blockStartRow = rowNum
     const BLOCK_ROWS = 6 // 생산일 + 메뉴1~4 + 원가합계
 
@@ -969,15 +1008,11 @@ function buildFreeFormatFactorySheetExcelJS(
       worksheet.getRow(rowNum + r).height = 18
     }
 
-    for (const date of weekDates) {
-      // D-1 생산일 계산
-      const productionDate = new Date(date)
-      productionDate.setDate(productionDate.getDate() - 1)
-
+    for (const { deliveryDate, productionDate } of weekPairs) {
       // ★ 생산일 기준으로 요일 열 배치
       const colIdx = productionDate.getDay() + 1
 
-      const dateStr = toDateStr(date)
+      const dateStr = toDateStr(deliveryDate)
       const dayData = freeFormatData[dateStr]
       const slots = dayData?.slots ?? []
       const totalCost = slots.reduce((s, sl) => s + sl.cost, 0)
