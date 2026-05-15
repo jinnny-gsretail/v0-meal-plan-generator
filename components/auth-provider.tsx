@@ -127,7 +127,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                     <Input
                       id="username"
                       type="text"
-                      placeholder="admin"
+                      placeholder="아이디를 입력하세요"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       className="pl-10"
