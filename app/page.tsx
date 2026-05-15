@@ -9,12 +9,14 @@ import { CostSettings } from '@/components/cost-settings'
 import { MealCalendar } from '@/components/meal-calendar'
 import { MealPlanSelector } from '@/components/meal-plan-selector'
 import { DateRangeSelector } from '@/components/date-range-selector'
+import { AuthProvider } from '@/components/auth-provider'
 import { Package, Settings, Calendar } from 'lucide-react'
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState('products')
 
   return (
+    <AuthProvider>
     <div className="min-h-screen bg-background">
       <Header />
       
@@ -128,5 +130,6 @@ export default function Home() {
         </Tabs>
       </main>
     </div>
+    </AuthProvider>
   )
 }

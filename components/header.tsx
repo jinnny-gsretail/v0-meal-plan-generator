@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Sparkles, RefreshCw, Download, Calendar, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Sparkles, RefreshCw, Download, Calendar, ChevronLeft, ChevronRight, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useMealboxStore } from '@/lib/store'
+import { useAuth } from '@/components/auth-provider'
 import { cn } from '@/lib/utils'
 
 export function DatePicker({ 
@@ -124,6 +125,8 @@ export function Header() {
     selectedMealPlan
   } = useMealboxStore()
   
+  const { handleLogout } = useAuth()
+  
   // Ensure dates are Date objects
   const startDate = storedStartDate instanceof Date ? storedStartDate : storedStartDate ? new Date(storedStartDate) : null
   const endDate = storedEndDate instanceof Date ? storedEndDate : storedEndDate ? new Date(storedEndDate) : null
@@ -193,6 +196,16 @@ export function Header() {
             <Button onClick={generateMeals} size="sm" disabled={!canGenerate}>
               <RefreshCw className="w-4 h-4 mr-2" />
               식단 자동 생성
+            </Button>
+            <div className="w-px h-6 bg-border mx-1" />
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={handleLogout}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              로그아웃
             </Button>
           </div>
         </div>
